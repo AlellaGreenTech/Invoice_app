@@ -12,6 +12,17 @@ from flask import current_app
 class PDFParser:
     """Parser for extracting data from PDF invoices."""
 
+    @staticmethod
+    def clean_text(text):
+        """Remove null bytes and other problematic characters from text."""
+        if text is None:
+            return None
+        # Remove null bytes that PostgreSQL can't store
+        text = text.replace('\x00', '')
+        # Remove other control characters except newlines and tabs
+        text = ''.join(char for char in text if char == '\n' or char == '\t' or (ord(char) >= 32 and ord(char) < 127) or ord(char) >= 160)
+        return text
+
     # Common date formats
     DATE_PATTERNS = [
         r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',  # MM/DD/YYYY or DD/MM/YYYY
@@ -287,12 +298,12 @@ class PDFParser:
             invoice_number = self.extract_invoice_number(text)
 
             result = {
-                'vendor_name': vendor_name,
+                'vendor_name': self.clean_text(vendor_name),
                 'invoice_date': invoice_date,
                 'total_amount': total_amount,
                 'currency': currency,
-                'invoice_number': invoice_number,
-                'raw_text': text,
+                'invoice_number': self.clean_text(invoice_number),
+                'raw_text': self.clean_text(text),
                 'extraction_method': extraction_method,
                 'success': True,
                 'error': None
