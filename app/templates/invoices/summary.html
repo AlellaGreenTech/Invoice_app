@@ -126,9 +126,9 @@
 const categoryStats = {{ category_stats | tojson }};
 
 // Prepare data for charts
-const labels = categoryStats.map(stat => stat[0] || 'Uncategorized');
-const counts = categoryStats.map(stat => stat[1]);
-const amounts = categoryStats.map(stat => parseFloat(stat[2]) || 0);
+const labels = categoryStats.map(stat => stat.category || 'Uncategorized');
+const counts = categoryStats.map(stat => stat.count);
+const amounts = categoryStats.map(stat => parseFloat(stat.total) || 0);
 
 // Generate colors
 const colors = [
