@@ -96,11 +96,21 @@ def batch_summary(batch_id):
 
     # Get category breakdown
     from sqlalchemy import func
-    category_stats = db.session.query(
+    category_stats_rows = db.session.query(
         Invoice.category,
         func.count(Invoice.id).label('count'),
         func.sum(Invoice.total_amount).label('total')
     ).filter_by(batch_id=batch_id).group_by(Invoice.category).all()
+
+    # Convert to JSON-serializable format
+    category_stats = [
+        {
+            'category': row.category or 'Uncategorized',
+            'count': row.count,
+            'total': float(row.total) if row.total else 0
+        }
+        for row in category_stats_rows
+    ]
 
     return render_template(
         'invoices/summary.html',

@@ -67,15 +67,23 @@
                                         </td>
                                         <td>
                                             {% if batch.status == 'completed' %}
-                                                <a href="{{ url_for('invoices.batch_summary', batch_id=batch.id) }}" class="btn btn-sm btn-outline-primary">
-                                                    <i class="bi bi-eye"></i> View
-                                                </a>
+                                                <div class="btn-group" role="group">
+                                                    <a href="{{ url_for('invoices.batch_summary', batch_id=batch.id) }}" class="btn btn-sm btn-primary" title="View Summary">
+                                                        <i class="bi bi-bar-chart"></i> Summary
+                                                    </a>
+                                                    <a href="{{ url_for('invoices.batch_details', batch_id=batch.id) }}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                                        <i class="bi bi-list-ul"></i> Details
+                                                    </a>
+                                                    <a href="{{ url_for('exports.export_csv', batch_id=batch.id) }}" class="btn btn-sm btn-outline-success" title="Export CSV">
+                                                        <i class="bi bi-download"></i> CSV
+                                                    </a>
+                                                </div>
                                             {% elif batch.status == 'processing' %}
-                                                <a href="{{ url_for('invoices.batch_status', batch_id=batch.id) }}" class="btn btn-sm btn-outline-secondary">
-                                                    <i class="bi bi-hourglass-split"></i> Status
+                                                <a href="{{ url_for('invoices.processing', batch_id=batch.id) }}" class="btn btn-sm btn-outline-secondary">
+                                                    <i class="bi bi-hourglass-split"></i> Progress
                                                 </a>
                                             {% endif %}
-                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteBatch({{ batch.id }})">
+                                            <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteBatch({{ batch.id }})" title="Delete">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </td>
