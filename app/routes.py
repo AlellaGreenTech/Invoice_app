@@ -17,6 +17,15 @@ def index():
 @login_required
 def dashboard():
     """User dashboard showing recent batches."""
-    from app.models import Batch
+    from app.models import Batch, Invoice
     batches = Batch.query.filter_by(user_id=current_user.id).order_by(Batch.created_at.desc()).limit(10).all()
+
+    # Calculate needs_review_count for each completed batch
+    for batch in batches:
+        if batch.status == 'completed':
+            invoices = Invoice.query.filter_by(batch_id=batch.id, status='categorized').all()
+            batch.needs_review_count = sum(1 for inv in invoices if inv.needs_review())
+        else:
+            batch.needs_review_count = 0
+
     return render_template('dashboard.html', batches=batches)

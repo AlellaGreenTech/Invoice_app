@@ -4,10 +4,11 @@ from datetime import datetime
 from celery import shared_task
 from flask import current_app
 from app.extensions import db
-from app.models import Batch, Invoice
+from app.models import Batch, Invoice, UserSettings
 from app.invoices.drive_handler import DriveHandler
 from app.invoices.pdf_parser import PDFParser
 from app.invoices.categorizer import InvoiceCategorizer
+from app.utils.currency import CurrencyConverter
 
 
 @shared_task(bind=True)
@@ -36,6 +37,10 @@ def process_invoice_batch(self, batch_id, user_id):
             user = User.query.get(user_id)
             if not user:
                 raise ValueError(f'User {user_id} not found')
+
+            # Get user's base currency setting
+            user_settings = UserSettings.query.filter_by(user_id=user_id).first()
+            base_currency = user_settings.base_currency if user_settings else 'EUR'
 
             # Update batch status
             batch.status = 'processing'
@@ -84,6 +89,15 @@ def process_invoice_batch(self, batch_id, user_id):
                     # Categorize invoice
                     categorization = categorizer.categorize_invoice(parsed_data)
 
+                    # Calculate converted amount
+                    converted_amount = None
+                    if parsed_data['total_amount'] and parsed_data['currency']:
+                        converted_amount = CurrencyConverter.convert(
+                            parsed_data['total_amount'],
+                            parsed_data['currency'],
+                            base_currency
+                        )
+
                     # Create invoice record
                     invoice = Invoice(
                         batch_id=batch_id,
@@ -94,6 +108,8 @@ def process_invoice_batch(self, batch_id, user_id):
                         invoice_date=parsed_data['invoice_date'],
                         total_amount=parsed_data['total_amount'],
                         currency=parsed_data['currency'],
+                        currency_confidence=parsed_data.get('currency_confidence', 0.0),
+                        converted_amount=converted_amount,
                         category=categorization['category'],
                         category_confidence=categorization['confidence'],
                         raw_text=parsed_data['raw_text'],

@@ -31,13 +31,40 @@ class PDFParser:
         r'\b(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b',    # DD Month YYYY
     ]
 
-    # Currency patterns
+    # Currency patterns with currency identification
+    # Each pattern: (regex, currency, confidence)
+    # EUR patterns are prioritized since this is a European-focused application
+    CURRENCY_PATTERNS_WITH_CURRENCY = [
+        # EUR patterns (highest confidence) - checked first
+        (r'€\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)', 'EUR', 1.0),  # €1.234,56 or €1 234,56
+        (r'(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)\s*€', 'EUR', 1.0),  # 1.234,56€
+        (r'€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'EUR', 1.0),  # €1,234.56 (US format with € symbol)
+        (r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*€', 'EUR', 1.0),  # 1,234.56€ (US format)
+        (r'EUR\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)', 'EUR', 0.95),  # EUR 1.234,56
+        (r'(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)\s*EUR', 'EUR', 0.95),  # 1.234,56 EUR
+        (r'EUR\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'EUR', 0.95),  # EUR 1,234.56
+        (r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*EUR', 'EUR', 0.95),  # 1,234.56 EUR
+        # European format without symbol (comma as decimal) - likely EUR
+        (r'(\d{1,3}(?:\.\d{3})+,\d{2})', 'EUR', 0.85),  # 1.234,56 (European format, no symbol)
+        # GBP patterns
+        (r'£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'GBP', 1.0),  # £1,234.56
+        (r'GBP\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'GBP', 0.95),  # GBP 1,234.56
+        (r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*GBP', 'GBP', 0.95),  # 1,234.56 GBP
+        # USD patterns (lower confidence for bare $ since it's ambiguous)
+        (r'US\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'USD', 1.0),  # US$1,234.56 (explicit)
+        (r'USD\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'USD', 0.95),  # USD 1,234.56
+        (r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*USD', 'USD', 0.95),  # 1,234.56 USD
+        (r'\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)', 'USD', 0.7),  # $1,234.56 (bare $ is ambiguous)
+    ]
+
+    # Legacy patterns for fallback - EUR patterns first
     CURRENCY_PATTERNS = [
-        r'\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',  # $1,234.56
-        r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*USD',  # 1,234.56 USD
-        r'USD\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',  # USD 1,234.56
-        r'€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',    # €1,234.56
+        r'€\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})?)',  # €1.234,56
+        r'€\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',     # €1,234.56
+        r'(\d{1,3}(?:\.\d{3})+,\d{2})',              # 1.234,56 (European format)
         r'£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',    # £1,234.56
+        r'\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)',   # $1,234.56
+        r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|EUR|GBP)',  # 1,234.56 USD/EUR/GBP
     ]
 
     # Invoice number patterns
@@ -204,6 +231,45 @@ class PDFParser:
 
         return None
 
+    def parse_european_number(self, amount_str):
+        """
+        Parse European number format (1.234,56) to Decimal.
+
+        Args:
+            amount_str: Amount string in European or US format
+
+        Returns:
+            Decimal or None
+        """
+        # Check if this looks like European format (comma as decimal separator)
+        # European: 1.234,56 or 1 234,56
+        # US: 1,234.56
+        if ',' in amount_str and '.' in amount_str:
+            # If comma comes after the last dot, it's European
+            if amount_str.rfind(',') > amount_str.rfind('.'):
+                # European format: replace dots (thousands) and comma (decimal)
+                amount_str = amount_str.replace('.', '').replace(' ', '').replace(',', '.')
+            else:
+                # US format: just remove commas
+                amount_str = amount_str.replace(',', '')
+        elif ',' in amount_str:
+            # Could be European decimal or US thousands
+            # If comma is followed by exactly 2 digits at end, treat as decimal
+            if re.match(r'.*,\d{2}$', amount_str):
+                # European format with comma decimal
+                amount_str = amount_str.replace('.', '').replace(' ', '').replace(',', '.')
+            else:
+                # US thousands separator
+                amount_str = amount_str.replace(',', '')
+        else:
+            # Just dots or no separators - treat as US format
+            amount_str = amount_str.replace(' ', '')
+
+        try:
+            return Decimal(amount_str)
+        except InvalidOperation:
+            return None
+
     def extract_total_amount(self, text):
         """
         Extract total amount from invoice text.
@@ -212,53 +278,87 @@ class PDFParser:
             text: Invoice text
 
         Returns:
-            tuple: (amount, currency) or (None, None)
+            dict: {amount, currency, currency_confidence} or {amount: None, currency: None, currency_confidence: 0.0}
         """
+        result = {'amount': None, 'currency': None, 'currency_confidence': 0.0}
+
         # Look for "Total" or "Amount Due" patterns
         lines = text.split('\n')
 
         for line in lines:
             # Look for total indicators
-            if re.search(r'(total|amount due|balance due|grand total)[\s:]*', line, re.IGNORECASE):
-                # Try to extract amount from this line
+            if re.search(r'(total|amount due|balance due|grand total|montant total|totaal|summe|totale)[\s:]*', line, re.IGNORECASE):
+                # Try to extract amount with enhanced patterns
+                for pattern, currency, confidence in self.CURRENCY_PATTERNS_WITH_CURRENCY:
+                    match = re.search(pattern, line)
+                    if match:
+                        amount = self.parse_european_number(match.group(1))
+                        if amount is not None:
+                            return {'amount': amount, 'currency': currency, 'currency_confidence': confidence}
+
+        # If no total found with enhanced patterns, try fallback
+        for line in lines:
+            if re.search(r'(total|amount due|balance due|grand total|montant total|totaal|summe|totale)[\s:]*', line, re.IGNORECASE):
                 for pattern in self.CURRENCY_PATTERNS:
                     match = re.search(pattern, line)
                     if match:
-                        amount_str = match.group(1).replace(',', '')
-                        try:
-                            amount = Decimal(amount_str)
+                        amount = self.parse_european_number(match.group(1))
+                        if amount is not None:
+                            # Detect currency from line context - EUR biased
+                            currency = 'EUR'  # Default to EUR
+                            confidence = 0.5  # Lower confidence for fallback
 
-                            # Detect currency
-                            currency = 'USD'  # Default
+                            # Check for explicit currency indicators (prioritize EUR)
                             if '€' in line:
                                 currency = 'EUR'
+                                confidence = 0.9
+                            elif 'EUR' in line.upper():
+                                currency = 'EUR'
+                                confidence = 0.85
                             elif '£' in line:
                                 currency = 'GBP'
-                            elif 'EUR' in line:
-                                currency = 'EUR'
-                            elif 'GBP' in line:
+                                confidence = 0.9
+                            elif 'GBP' in line.upper():
                                 currency = 'GBP'
+                                confidence = 0.85
+                            elif 'US$' in line or 'USD' in line.upper():
+                                # Only USD if explicitly marked as US$ or USD
+                                currency = 'USD'
+                                confidence = 0.85
+                            elif '$' in line:
+                                # Bare $ is ambiguous - could be USD, CAD, AUD, etc.
+                                # Keep as EUR default with low confidence
+                                currency = 'EUR'
+                                confidence = 0.4
 
-                            return amount, currency
-                        except InvalidOperation:
-                            continue
+                            return {'amount': amount, 'currency': currency, 'currency_confidence': confidence}
 
-        # If no total found, try to find largest amount
+        # If no total found, try to find largest amount in whole text
         all_amounts = []
+        for pattern, currency, confidence in self.CURRENCY_PATTERNS_WITH_CURRENCY:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                amount = self.parse_european_number(match.group(1))
+                if amount is not None:
+                    all_amounts.append((amount, currency, confidence))
+
+        if all_amounts:
+            # Return the largest amount (likely the total) with lower confidence
+            best = max(all_amounts, key=lambda x: x[0])
+            return {'amount': best[0], 'currency': best[1], 'currency_confidence': best[2] * 0.7}
+
+        # Last resort: look for any number that looks like a total
         for pattern in self.CURRENCY_PATTERNS:
             matches = re.findall(pattern, text)
             for match in matches:
-                try:
-                    amount = Decimal(match.replace(',', ''))
+                amount = self.parse_european_number(match)
+                if amount is not None:
                     all_amounts.append(amount)
-                except:
-                    continue
 
         if all_amounts:
-            # Return the largest amount (likely the total)
-            return max(all_amounts), 'USD'
+            return {'amount': max(all_amounts), 'currency': 'EUR', 'currency_confidence': 0.3}
 
-        return None, None
+        return result
 
     def extract_invoice_number(self, text):
         """
@@ -294,14 +394,15 @@ class PDFParser:
             # Extract fields
             vendor_name = self.extract_vendor_name(text)
             invoice_date = self.extract_invoice_date(text)
-            total_amount, currency = self.extract_total_amount(text)
+            amount_data = self.extract_total_amount(text)
             invoice_number = self.extract_invoice_number(text)
 
             result = {
                 'vendor_name': self.clean_text(vendor_name),
                 'invoice_date': invoice_date,
-                'total_amount': total_amount,
-                'currency': currency,
+                'total_amount': amount_data['amount'],
+                'currency': amount_data['currency'],
+                'currency_confidence': amount_data['currency_confidence'],
                 'invoice_number': self.clean_text(invoice_number),
                 'raw_text': self.clean_text(text),
                 'extraction_method': extraction_method,
@@ -320,6 +421,7 @@ class PDFParser:
                 'invoice_date': None,
                 'total_amount': None,
                 'currency': None,
+                'currency_confidence': 0.0,
                 'invoice_number': None,
                 'raw_text': None,
                 'extraction_method': None,

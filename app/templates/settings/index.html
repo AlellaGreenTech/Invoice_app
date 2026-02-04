@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Invoice Processor{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-gear"></i> Settings
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('settings.update') }}">
+                        <div class="mb-4">
+                            <label for="base_currency" class="form-label fw-bold">Base Currency</label>
+                            <p class="text-muted small mb-2">
+                                All invoice amounts will be converted to this currency for comparison.
+                            </p>
+                            <select class="form-select" id="base_currency" name="base_currency">
+                                {% for currency in currencies %}
+                                    <option value="{{ currency }}" {% if settings.base_currency == currency %}selected{% endif %}>
+                                        {% if currency == 'EUR' %}EUR - Euro{% endif %}
+                                        {% if currency == 'USD' %}USD - US Dollar{% endif %}
+                                        {% if currency == 'GBP' %}GBP - British Pound{% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg"></i> Save Settings
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mt-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle"></i> About Currency Conversion
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-0">
+                        Invoice amounts are converted using fixed exchange rates for consistent reporting.
+                        The converted amounts are shown alongside the original amounts in the invoice details view.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

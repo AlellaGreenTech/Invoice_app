@@ -49,6 +49,10 @@
                                 {{ current_user.name or current_user.email }}
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{{ url_for('settings.index') }}">
+                                    <i class="bi bi-gear"></i> Settings
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">
                                     <i class="bi bi-box-arrow-right"></i> Logout
                                 </a></li>

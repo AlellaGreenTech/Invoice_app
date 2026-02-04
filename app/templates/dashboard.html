@@ -78,6 +78,11 @@
                                                         <i class="bi bi-download"></i> CSV
                                                     </a>
                                                 </div>
+                                                {% if batch.needs_review_count and batch.needs_review_count > 0 %}
+                                                    <a href="{{ url_for('invoices.batch_review', batch_id=batch.id) }}" class="btn btn-sm btn-warning ms-1" title="Review {{ batch.needs_review_count }} invoice(s)">
+                                                        <i class="bi bi-check2-square"></i> Review ({{ batch.needs_review_count }})
+                                                    </a>
+                                                {% endif %}
                                             {% elif batch.status == 'processing' %}
                                                 <a href="{{ url_for('invoices.processing', batch_id=batch.id) }}" class="btn btn-sm btn-outline-secondary">
                                                     <i class="bi bi-hourglass-split"></i> Progress

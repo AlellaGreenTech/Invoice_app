@@ -51,6 +51,7 @@
                             <th>Invoice #</th>
                             <th>Date</th>
                             <th>Amount</th>
+                            <th>Converted</th>
                             <th>Category</th>
                             <th>Confidence</th>
                             <th>Actions</th>
@@ -63,7 +64,7 @@
                                 {% if invoice.category != current_category %}
                                     {% set current_category = invoice.category %}
                                     <tr class="table-secondary">
-                                        <td colspan="7" class="fw-bold">
+                                        <td colspan="8" class="fw-bold">
                                             <i class="bi bi-folder"></i> {{ invoice.category or 'Uncategorized' }}
                                         </td>
                                     </tr>
@@ -72,7 +73,14 @@
                                     <td>{{ invoice.vendor_name or '-' }}</td>
                                     <td>{{ invoice.invoice_number or '-' }}</td>
                                     <td>{{ invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else '-' }}</td>
-                                    <td>{{ invoice.currency or 'USD' }} {{ '{:,.2f}'.format(invoice.total_amount) if invoice.total_amount else '-' }}</td>
+                                    <td>{{ invoice.currency or 'EUR' }} {{ '{:,.2f}'.format(invoice.total_amount) if invoice.total_amount else '-' }}</td>
+                                    <td>
+                                        {% if invoice.converted_amount %}
+                                            <span class="text-muted">{{ base_currency }} {{ '{:,.2f}'.format(invoice.converted_amount) }}</span>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <span class="badge bg-primary">{{ invoice.category or 'Uncategorized' }}</span>
                                     </td>
@@ -86,7 +94,10 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <button class="btn btn-sm btn-outline-primary" onclick="editCategory({{ invoice.id }})">
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="viewPdf({{ invoice.id }}, '{{ invoice.filename }}')" title="View PDF">
+                                            <i class="bi bi-file-pdf"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="editInvoice({{ invoice.id }}, {{ invoice.total_amount or 'null' }}, '{{ invoice.currency or 'EUR' }}', '{{ invoice.category or '' }}')" title="Edit Invoice">
                                             <i class="bi bi-pencil"></i>
                                         </button>
                                     </td>
@@ -94,7 +105,7 @@
                             {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="7" class="text-center py-4 text-muted">
+                                <td colspan="8" class="text-center py-4 text-muted">
                                     No invoices found
                                 </td>
                             </tr>
@@ -106,19 +117,54 @@
     </div>
 </div>
 
-<!-- Edit Category Modal -->
-<div class="modal fade" id="editCategoryModal" tabindex="-1">
+<!-- PDF Viewer Modal -->
+<div class="modal fade" id="pdfViewerModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pdfModalTitle">View PDF</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="pdfLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Loading PDF...</p>
+                </div>
+                <iframe id="pdfFrame" style="width: 100%; height: 75vh; display: none; border: none;"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Invoice Modal -->
+<div class="modal fade" id="editInvoiceModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Category</h5>
+                <h5 class="modal-title">Edit Invoice</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="editInvoiceId">
+                <div class="row mb-3">
+                    <div class="col-8">
+                        <label for="editAmount" class="form-label">Amount</label>
+                        <input type="number" step="0.01" class="form-control" id="editAmount" placeholder="0.00">
+                    </div>
+                    <div class="col-4">
+                        <label for="editCurrency" class="form-label">Currency</label>
+                        <select class="form-select" id="editCurrency">
+                            <option value="EUR">EUR</option>
+                            <option value="USD">USD</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="mb-3">
-                    <label for="newCategory" class="form-label">Category</label>
-                    <input type="text" class="form-control" id="newCategory" list="categoryList">
+                    <label for="editCategory" class="form-label">Category</label>
+                    <input type="text" class="form-control" id="editCategory" list="categoryList">
                     <datalist id="categoryList">
                         <option value="Office Supplies">
                         <option value="Travel">
@@ -133,13 +179,35 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveCategory()">Save</button>
+                <button type="button" class="btn btn-primary" onclick="saveInvoice()">Save</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
+// View PDF
+function viewPdf(invoiceId, filename) {
+    document.getElementById('pdfModalTitle').textContent = filename;
+    document.getElementById('pdfLoading').style.display = 'block';
+    document.getElementById('pdfFrame').style.display = 'none';
+
+    const modal = new bootstrap.Modal(document.getElementById('pdfViewerModal'));
+    modal.show();
+
+    const pdfFrame = document.getElementById('pdfFrame');
+    pdfFrame.src = `/invoices/${invoiceId}/pdf`;
+    pdfFrame.onload = function() {
+        document.getElementById('pdfLoading').style.display = 'none';
+        pdfFrame.style.display = 'block';
+    };
+}
+
+// Clean up PDF frame when modal is closed
+document.getElementById('pdfViewerModal').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('pdfFrame').src = '';
+});
+
 // Search functionality
 document.getElementById('searchInput').addEventListener('input', function(e) {
     const searchTerm = e.target.value.toLowerCase();
@@ -170,33 +238,44 @@ document.getElementById('categoryFilter').addEventListener('change', function(e)
     });
 });
 
-// Edit category
-function editCategory(invoiceId) {
+// Edit invoice
+function editInvoice(invoiceId, amount, currency, category) {
     document.getElementById('editInvoiceId').value = invoiceId;
-    const modal = new bootstrap.Modal(document.getElementById('editCategoryModal'));
+    document.getElementById('editAmount').value = amount || '';
+    document.getElementById('editCurrency').value = currency || 'EUR';
+    document.getElementById('editCategory').value = category || '';
+    const modal = new bootstrap.Modal(document.getElementById('editInvoiceModal'));
     modal.show();
 }
 
-function saveCategory() {
+function saveInvoice() {
     const invoiceId = document.getElementById('editInvoiceId').value;
-    const newCategory = document.getElementById('newCategory').value;
+    const amount = document.getElementById('editAmount').value;
+    const currency = document.getElementById('editCurrency').value;
+    const category = document.getElementById('editCategory').value;
 
-    fetch(`/invoices/${invoiceId}/category`, {
+    fetch(`/invoices/${invoiceId}/update`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ category: newCategory })
+        body: JSON.stringify({
+            total_amount: amount ? parseFloat(amount) : null,
+            currency: currency,
+            category: category
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.message) {
             location.reload();
+        } else if (data.error) {
+            alert(data.error);
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Failed to update category');
+        alert('Failed to update invoice');
     });
 }
 </script>

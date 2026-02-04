@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Review Invoices - Batch #{{ batch.id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="row mb-3">
+        <div class="col">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">
+                    <i class="bi bi-check2-square"></i> Review Invoices - Batch #{{ batch.id }}
+                </h4>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="progress" style="width: 200px; height: 8px;">
+                        <div id="progressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <span id="progressBadge" class="badge bg-primary">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row" id="reviewContainer">
+        <!-- PDF Viewer Column -->
+        <div class="col-lg-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-file-pdf text-danger"></i>
+                        <span id="pdfTitle">PDF Preview</span>
+                    </h5>
+                    <a id="pdfDownloadLink" href="#" target="_blank" class="btn btn-sm btn-outline-secondary" style="display: none;">
+                        <i class="bi bi-box-arrow-up-right"></i> Open in New Tab
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    <div id="pdfLoading" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3 text-muted">Loading PDF...</p>
+                    </div>
+                    <iframe id="pdfFrame" style="width: 100%; height: 70vh; display: none; border: none;"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <!-- Review Form Column -->
+        <div class="col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-pencil-square"></i> Invoice Details</h5>
+                </div>
+                <div class="card-body">
+                    <div id="loadingState" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3 text-muted">Loading invoice...</p>
+                    </div>
+
+                    <div id="invoiceContent" style="display: none;">
+                        <!-- Detected info (read-only) -->
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-muted small mb-1">Filename</label>
+                                <p id="invoiceFilename" class="fw-bold mb-0 small">-</p>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-muted small mb-1">Vendor</label>
+                                <p id="invoiceVendor" class="fw-bold mb-0 small">-</p>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-muted small mb-1">Invoice #</label>
+                                <p id="invoiceNumber" class="mb-0 small">-</p>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-muted small mb-1">Date</label>
+                                <p id="invoiceDate" class="mb-0 small">-</p>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <!-- Editable fields -->
+                        <div class="mb-3">
+                            <label for="totalAmount" class="form-label">Total Amount</label>
+                            <div class="input-group">
+                                <input type="number" step="0.01" class="form-control" id="totalAmount" placeholder="0.00">
+                                <span id="amountConfidence" class="input-group-text"></span>
+                            </div>
+                            <small class="text-muted">Check the PDF for the correct total amount</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="currency" class="form-label">Currency</label>
+                            <div class="input-group">
+                                <select class="form-select" id="currency">
+                                    <option value="EUR">EUR - Euro</option>
+                                    <option value="USD">USD - US Dollar</option>
+                                    <option value="GBP">GBP - British Pound</option>
+                                </select>
+                                <span id="currencyConfidence" class="input-group-text"></span>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="category" class="form-label">Category</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="category" list="categoryList" placeholder="Select or type a category">
+                                <span id="categoryConfidence" class="input-group-text"></span>
+                            </div>
+                            <datalist id="categoryList">
+                                <option value="Office Supplies">
+                                <option value="Travel">
+                                <option value="Software">
+                                <option value="Professional Services">
+                                <option value="Utilities">
+                                <option value="Marketing">
+                                <option value="Equipment">
+                                <option value="Other">
+                            </datalist>
+                        </div>
+
+                        <!-- Action buttons -->
+                        <div class="d-flex justify-content-between">
+                            <button type="button" class="btn btn-outline-secondary" onclick="skipInvoice()">
+                                <i class="bi bi-skip-forward"></i> Skip
+                            </button>
+                            <button type="button" class="btn btn-primary" onclick="saveAndNext()">
+                                <i class="bi bi-check-lg"></i> Save & Next
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Complete state -->
+                    <div id="completeState" style="display: none;" class="text-center py-5">
+                        <i class="bi bi-check-circle text-success" style="font-size: 4rem;"></i>
+                        <h4 class="mt-3">All Done!</h4>
+                        <p class="text-muted">All invoices in this batch have been reviewed.</p>
+                        <a href="{{ url_for('invoices.batch_summary', batch_id=batch.id) }}" class="btn btn-primary mt-2">
+                            <i class="bi bi-bar-chart"></i> View Summary
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mt-3">
+                <a href="{{ url_for('invoices.batch_summary', batch_id=batch.id) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Summary
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const batchId = {{ batch.id }};
+let currentInvoice = null;
+
+function formatConfidence(confidence) {
+    if (confidence === null || confidence === undefined) return '';
+    const percent = Math.round(confidence * 100);
+    let badgeClass = 'bg-danger';
+    if (percent >= 80) badgeClass = 'bg-success';
+    else if (percent >= 50) badgeClass = 'bg-warning';
+    return `<span class="badge ${badgeClass}">${percent}%</span>`;
+}
+
+function loadPdf(invoiceId, filename) {
+    document.getElementById('pdfTitle').textContent = filename;
+    document.getElementById('pdfLoading').style.display = 'block';
+    document.getElementById('pdfFrame').style.display = 'none';
+
+    const pdfUrl = `/invoices/${invoiceId}/pdf`;
+    document.getElementById('pdfDownloadLink').href = pdfUrl;
+    document.getElementById('pdfDownloadLink').style.display = 'inline-block';
+
+    const pdfFrame = document.getElementById('pdfFrame');
+    pdfFrame.src = pdfUrl;
+    pdfFrame.onload = function() {
+        document.getElementById('pdfLoading').style.display = 'none';
+        pdfFrame.style.display = 'block';
+    };
+}
+
+function loadNextInvoice() {
+    document.getElementById('loadingState').style.display = 'block';
+    document.getElementById('invoiceContent').style.display = 'none';
+    document.getElementById('completeState').style.display = 'none';
+    document.getElementById('pdfLoading').style.display = 'block';
+    document.getElementById('pdfFrame').style.display = 'none';
+    document.getElementById('pdfDownloadLink').style.display = 'none';
+
+    fetch(`/invoices/batch/${batchId}/review/next`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('loadingState').style.display = 'none';
+
+            if (data.complete) {
+                document.getElementById('completeState').style.display = 'block';
+                document.getElementById('progressBadge').textContent = 'Complete!';
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('pdfLoading').innerHTML =
+                    '<i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>' +
+                    '<p class="mt-3 text-muted">All invoices reviewed!</p>';
+                return;
+            }
+
+            currentInvoice = data.invoice;
+            const progress = data.progress;
+
+            // Update progress
+            const progressPercent = Math.round((progress.reviewed / progress.total) * 100);
+            document.getElementById('progressBadge').textContent =
+                `Reviewing ${progress.reviewed + 1} of ${progress.remaining + progress.reviewed}`;
+            document.getElementById('progressBar').style.width = progressPercent + '%';
+
+            // Load PDF
+            loadPdf(data.invoice.id, data.invoice.filename);
+
+            // Fill in invoice data
+            document.getElementById('invoiceFilename').textContent = data.invoice.filename || '-';
+            document.getElementById('invoiceVendor').textContent = data.invoice.vendor_name || '-';
+            document.getElementById('invoiceNumber').textContent = data.invoice.invoice_number || '-';
+            document.getElementById('invoiceDate').textContent = data.invoice.invoice_date || '-';
+
+            // Fill in editable fields
+            document.getElementById('totalAmount').value = data.invoice.total_amount || '';
+            document.getElementById('currency').value = data.invoice.currency || 'EUR';
+            document.getElementById('category').value = data.invoice.category || '';
+
+            // Show confidence badges
+            document.getElementById('currencyConfidence').innerHTML =
+                formatConfidence(data.invoice.currency_confidence);
+            document.getElementById('categoryConfidence').innerHTML =
+                formatConfidence(data.invoice.category_confidence);
+            document.getElementById('amountConfidence').innerHTML =
+                data.invoice.total_amount ? '<i class="bi bi-check text-success"></i>' : '<i class="bi bi-x text-danger"></i>';
+
+            document.getElementById('invoiceContent').style.display = 'block';
+        })
+        .catch(error => {
+            console.error('Error loading invoice:', error);
+            document.getElementById('loadingState').innerHTML =
+                '<i class="bi bi-exclamation-triangle text-danger" style="font-size: 2rem;"></i>' +
+                '<p class="mt-3 text-danger">Failed to load invoice</p>';
+        });
+}
+
+function saveAndNext() {
+    if (!currentInvoice) return;
+
+    const data = {
+        total_amount: parseFloat(document.getElementById('totalAmount').value) || null,
+        currency: document.getElementById('currency').value,
+        category: document.getElementById('category').value
+    };
+
+    fetch(`/invoices/${currentInvoice.id}/review`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.message) {
+            loadNextInvoice();
+        }
+    })
+    .catch(error => {
+        console.error('Error saving review:', error);
+        alert('Failed to save review');
+    });
+}
+
+function skipInvoice() {
+    if (!currentInvoice) return;
+
+    fetch(`/invoices/${currentInvoice.id}/skip`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.message) {
+            loadNextInvoice();
+        }
+    })
+    .catch(error => {
+        console.error('Error skipping invoice:', error);
+        alert('Failed to skip invoice');
+    });
+}
+
+// Load the first invoice on page load
+loadNextInvoice();
+</script>
+{% endblock %}

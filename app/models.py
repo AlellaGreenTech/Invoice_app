@@ -73,8 +73,11 @@ class Invoice(db.Model):
     invoice_date = db.Column(db.Date)
     total_amount = db.Column(db.Numeric(15, 2))
     currency = db.Column(db.String(10))
+    currency_confidence = db.Column(db.Float)  # Confidence of currency detection (0.0-1.0)
+    converted_amount = db.Column(db.Numeric(15, 2))  # Amount in user's base currency
     category = db.Column(db.String(255))
     category_confidence = db.Column(db.Float)
+    manually_reviewed = db.Column(db.Boolean, default=False)
     raw_text = db.Column(db.Text)  # For debugging
     extraction_method = db.Column(db.String(50))  # pdfplumber or ocr
     status = db.Column(db.String(50), default='pending')  # pending, extracted, categorized, failed
@@ -84,6 +87,18 @@ class Invoice(db.Model):
 
     def __repr__(self):
         return f'<Invoice {self.filename}>'
+
+    def needs_review(self):
+        """Check if this invoice needs manual review."""
+        if self.manually_reviewed:
+            return False
+        if self.currency is None or (self.currency_confidence and self.currency_confidence < 0.6):
+            return True
+        if self.category is None or self.category == 'Other' or (self.category_confidence and self.category_confidence < 0.5):
+            return True
+        if self.total_amount is None:
+            return True
+        return False
 
 
 class Category(db.Model):
@@ -100,3 +115,17 @@ class Category(db.Model):
 
     def __repr__(self):
         return f'<Category {self.name}>'
+
+
+class UserSettings(db.Model):
+    """User settings model for user preferences."""
+    __tablename__ = 'user_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True)
+    base_currency = db.Column(db.String(10), default='EUR')
+
+    user = db.relationship('User', backref=db.backref('settings', uselist=False))
+
+    def __repr__(self):
+        return f'<UserSettings user_id={self.user_id} base_currency={self.base_currency}>'
