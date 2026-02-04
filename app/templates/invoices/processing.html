@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Processing - Invoice Processor{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-hourglass-split"></i> Processing Batch #{{ batch.id }}
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="fw-bold">Progress</span>
+                            <span id="progressText">{{ batch.processed_invoices }}/{{ batch.total_invoices }} invoices</span>
+                        </div>
+                        <div class="progress" style="height: 30px;">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar"
+                                 style="width: {{ batch.progress_percentage }}%"
+                                 aria-valuenow="{{ batch.progress_percentage }}"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100">
+                                {{ batch.progress_percentage }}%
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row text-center mb-4">
+                        <div class="col-4">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h3 id="totalCount" class="mb-0">{{ batch.total_invoices }}</h3>
+                                    <small class="text-muted">Total</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h3 id="processedCount" class="mb-0">{{ batch.processed_invoices }}</h3>
+                                    <small>Processed</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="card bg-danger text-white">
+                                <div class="card-body">
+                                    <h3 id="failedCount" class="mb-0">{{ batch.failed_invoices }}</h3>
+                                    <small>Failed</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="statusMessage" class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        Processing invoices... This may take a few minutes depending on the batch size.
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Poll for batch status updates
+const batchId = {{ batch.id }};
+let pollInterval;
+
+function updateStatus() {
+    fetch(`/invoices/batch/${batchId}`)
+        .then(response => response.json())
+        .then(data => {
+            // Update progress bar
+            const percentage = data.progress_percentage;
+            document.getElementById('progressBar').style.width = percentage + '%';
+            document.getElementById('progressBar').textContent = percentage + '%';
+            document.getElementById('progressBar').setAttribute('aria-valuenow', percentage);
+
+            // Update counts
+            document.getElementById('progressText').textContent =
+                `${data.processed_invoices}/${data.total_invoices} invoices`;
+            document.getElementById('processedCount').textContent = data.processed_invoices;
+            document.getElementById('failedCount').textContent = data.failed_invoices;
+
+            // Check if completed
+            if (data.status === 'completed') {
+                clearInterval(pollInterval);
+                document.getElementById('statusMessage').className = 'alert alert-success';
+                document.getElementById('statusMessage').innerHTML =
+                    '<i class="bi bi-check-circle"></i> Processing completed! Redirecting to summary...';
+                setTimeout(() => {
+                    window.location.href = `/invoices/batch/${batchId}/summary`;
+                }, 2000);
+            } else if (data.status === 'failed') {
+                clearInterval(pollInterval);
+                document.getElementById('statusMessage').className = 'alert alert-danger';
+                document.getElementById('statusMessage').innerHTML =
+                    '<i class="bi bi-exclamation-triangle"></i> Processing failed. Please try again.';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching status:', error);
+        });
+}
+
+// Poll every 2 seconds
+pollInterval = setInterval(updateStatus, 2000);
+
+// Initial update
+updateStatus();
+</script>
+{% endblock %}

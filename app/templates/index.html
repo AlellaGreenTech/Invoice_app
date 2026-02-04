@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome - Invoice Processor{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Hero Section -->
+    <div class="row align-items-center min-vh-75">
+        <div class="col-lg-6">
+            <h1 class="display-4 fw-bold mb-4">
+                Automate Your Invoice Processing
+            </h1>
+            <p class="lead mb-4">
+                Process hundreds of invoices from Google Drive with AI-powered categorization.
+                Extract data, organize by category, and export to CSV or Google Sheets in minutes.
+            </p>
+            <div class="d-grid gap-2 d-md-flex">
+                <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-lg px-4">
+                    <i class="bi bi-google"></i> Get Started with Google
+                </a>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="text-center">
+                <i class="bi bi-file-earmark-pdf text-primary" style="font-size: 15rem; opacity: 0.1;"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="row mt-5 pt-5">
+        <div class="col-12 text-center mb-5">
+            <h2 class="fw-bold">How It Works</h2>
+            <p class="text-muted">Simple, fast, and intelligent invoice processing</p>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body text-center p-4">
+                    <div class="feature-icon bg-primary bg-gradient text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
+                        <i class="bi bi-cloud-upload fs-2"></i>
+                    </div>
+                    <h5 class="card-title">1. Upload from Drive</h5>
+                    <p class="card-text text-muted">
+                        Paste a Google Drive folder URL containing your PDF invoices.
+                        We'll securely access and process them.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body text-center p-4">
+                    <div class="feature-icon bg-success bg-gradient text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
+                        <i class="bi bi-robot fs-2"></i>
+                    </div>
+                    <h5 class="card-title">2. AI Categorization</h5>
+                    <p class="card-text text-muted">
+                        Claude AI automatically extracts vendor, date, amount, and categorizes
+                        each invoice with high accuracy.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body text-center p-4">
+                    <div class="feature-icon bg-info bg-gradient text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 4rem; height: 4rem;">
+                        <i class="bi bi-download fs-2"></i>
+                    </div>
+                    <h5 class="card-title">3. Export Results</h5>
+                    <p class="card-text text-muted">
+                        View summaries, detailed breakdowns, and export to CSV or
+                        directly to Google Sheets.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Benefits Section -->
+    <div class="row mt-5 pt-5 bg-light rounded p-5">
+        <div class="col-12 text-center mb-4">
+            <h2 class="fw-bold">Built for CFOs</h2>
+        </div>
+        <div class="col-md-6">
+            <ul class="list-unstyled">
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    Process 50-200 invoices in one batch
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    Automatic data extraction from PDFs
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    OCR support for scanned documents
+                </li>
+            </ul>
+        </div>
+        <div class="col-md-6">
+            <ul class="list-unstyled">
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    Smart categorization with confidence scores
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    Visual summaries and breakdowns
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                    Export to CSV or Google Sheets
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

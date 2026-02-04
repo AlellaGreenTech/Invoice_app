@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Summary - Batch #{{ batch.id }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        border-left: 4px solid;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col">
+            <h2 class="fw-bold">Batch #{{ batch.id }} Summary</h2>
+            <p class="text-muted">
+                Processed {{ batch.processed_invoices }} invoices
+                {% if batch.date_range_start and batch.date_range_end %}
+                    from {{ batch.date_range_start.strftime('%Y-%m-%d') }} to {{ batch.date_range_end.strftime('%Y-%m-%d') }}
+                {% endif %}
+            </p>
+        </div>
+        <div class="col-auto">
+            <a href="{{ url_for('invoices.batch_details', batch_id=batch.id) }}" class="btn btn-outline-primary">
+                <i class="bi bi-list-ul"></i> View Details
+            </a>
+            <a href="{{ url_for('exports.export_csv', batch_id=batch.id) }}" class="btn btn-success">
+                <i class="bi bi-download"></i> Export CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card stat-card border-primary shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2">Total Amount</h6>
+                    <h3 class="mb-0">
+                        {{ batch.currency or 'USD' }} {{ '{:,.2f}'.format(batch.total_amount or 0) }}
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-success shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2">Invoices Processed</h6>
+                    <h3 class="mb-0">{{ batch.processed_invoices }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-info shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2">Date Range</h6>
+                    <h3 class="mb-0 small">
+                        {% if batch.date_range_start and batch.date_range_end %}
+                            {{ (batch.date_range_end - batch.date_range_start).days }} days
+                        {% else %}
+                            -
+                        {% endif %}
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card border-warning shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2">Failed</h6>
+                    <h3 class="mb-0">{{ batch.failed_invoices }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Breakdown -->
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Category Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Amount by Category</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="amountChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body text-center p-4">
+                    <h5 class="mb-3">Export Options</h5>
+                    <div class="btn-group" role="group">
+                        <a href="{{ url_for('exports.export_csv', batch_id=batch.id) }}" class="btn btn-success">
+                            <i class="bi bi-file-earmark-spreadsheet"></i> Download CSV
+                        </a>
+                        <button class="btn btn-primary" onclick="exportToSheets()">
+                            <i class="bi bi-google"></i> Export to Google Sheets
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Real data from backend
+const categoryStats = {{ category_stats | tojson }};
+
+// Prepare data for charts
+const labels = categoryStats.map(stat => stat[0] || 'Uncategorized');
+const counts = categoryStats.map(stat => stat[1]);
+const amounts = categoryStats.map(stat => parseFloat(stat[2]) || 0);
+
+// Generate colors
+const colors = [
+    'rgba(54, 162, 235, 0.8)',
+    'rgba(255, 99, 132, 0.8)',
+    'rgba(255, 206, 86, 0.8)',
+    'rgba(75, 192, 192, 0.8)',
+    'rgba(153, 102, 255, 0.8)',
+    'rgba(255, 159, 64, 0.8)',
+    'rgba(201, 203, 207, 0.8)',
+    'rgba(83, 102, 255, 0.8)',
+    'rgba(255, 99, 255, 0.8)',
+    'rgba(99, 255, 132, 0.8)'
+];
+
+const categoryData = {
+    labels: labels,
+    datasets: [{
+        data: counts,
+        backgroundColor: colors.slice(0, labels.length)
+    }]
+};
+
+const amountData = {
+    labels: labels,
+    datasets: [{
+        label: 'Amount ({{ batch.currency or "USD" }})',
+        data: amounts,
+        backgroundColor: 'rgba(54, 162, 235, 0.8)'
+    }]
+};
+
+// Category count chart
+new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: categoryData,
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+// Amount by category chart
+new Chart(document.getElementById('amountChart'), {
+    type: 'bar',
+    data: amountData,
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+function exportToSheets() {
+    fetch('/export/sheets/{{ batch.id }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.url) {
+            window.open(data.url, '_blank');
+        } else {
+            alert('Export successful!');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to export to Google Sheets');
+    });
+}
+</script>
+{% endblock %}

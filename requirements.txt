@@ -1,0 +1,42 @@
+# Core Framework
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-Migrate==4.0.5
+Flask-Login==0.6.3
+Flask-WTF==1.2.1
+
+# Database
+psycopg2-binary==2.9.9
+
+# Background Jobs
+celery==5.3.4
+redis==5.0.1
+
+# Google APIs
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+google-api-python-client==2.110.0
+
+# PDF Processing
+pdfplumber==0.10.3
+pytesseract==0.3.10
+pdf2image==1.16.3
+Pillow==10.1.0
+
+# AI
+anthropic>=0.40.0
+
+# Data Processing
+pandas==2.1.4
+
+# Google Sheets
+gspread==5.12.3
+
+# WSGI Server
+gunicorn==21.2.0
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+validators==0.22.0
+Werkzeug==3.0.1
