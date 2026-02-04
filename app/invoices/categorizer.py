@@ -73,7 +73,7 @@ class InvoiceCategorizer:
 
             # Call Claude API
             message = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-haiku-20240307",
                 max_tokens=500,
                 temperature=0,
                 messages=[
