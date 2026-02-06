@@ -47,8 +47,7 @@ class GoogleAuth:
 
         authorization_url, state = flow.authorization_url(
             access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent select_account'
+            prompt='consent'
         )
 
         return authorization_url, state
