@@ -32,3 +32,15 @@ def dashboard():
             batch.needs_fix_count = 0
 
     return render_template('dashboard.html', batches=batches)
+
+
+@main_bp.route('/privacy')
+def privacy():
+    """Privacy policy page."""
+    return render_template('privacy.html')
+
+
+@main_bp.route('/terms')
+def terms():
+    """Terms of service page."""
+    return render_template('terms.html')
