@@ -101,8 +101,28 @@ def callback():
 
 @auth_bp.route('/logout')
 def logout():
-    """Logout user."""
+    """Logout user and revoke Google token."""
+    import requests
+    from flask import make_response
+
+    # Revoke Google token if user is logged in
+    if current_user.is_authenticated and current_user.access_token:
+        try:
+            # Revoke the token on Google's side
+            requests.post(
+                'https://oauth2.googleapis.com/revoke',
+                params={'token': current_user.access_token},
+                headers={'Content-Type': 'application/x-www-form-urlencoded'}
+            )
+        except Exception as e:
+            current_app.logger.warning(f'Failed to revoke token: {e}')
+
     logout_user()
     session.clear()
     flash('You have been logged out successfully.', 'info')
-    return redirect(url_for('main.index'))
+
+    # Create response and clear remember me cookie
+    response = make_response(redirect(url_for('main.index')))
+    response.delete_cookie('remember_token')
+    response.delete_cookie('session')
+    return response

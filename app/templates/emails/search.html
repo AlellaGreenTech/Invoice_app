@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Gmail Search - Invoice Processor{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-envelope"></i> Search Gmail Attachments
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <form method="POST" action="{{ url_for('emails.search') }}">
+                        <div class="mb-4">
+                            <label for="query" class="form-label fw-bold">Search Query</label>
+                            <input type="text" class="form-control form-control-lg" id="query" name="query"
+                                   placeholder="e.g., has:attachment from:vendor invoice"
+                                   value="{{ request.form.get('query', '') }}" required>
+                            <div class="form-text">
+                                Use Gmail search syntax. Examples below.
+                            </div>
+                        </div>
+
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="date_from" class="form-label">From Date (optional)</label>
+                                <input type="date" class="form-control" id="date_from" name="date_from"
+                                       value="{{ request.form.get('date_from', '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="date_to" class="form-label">To Date (optional)</label>
+                                <input type="date" class="form-control" id="date_to" name="date_to"
+                                       value="{{ request.form.get('date_to', '') }}">
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-danger btn-lg">
+                                <i class="bi bi-search"></i> Search Gmail
+                            </button>
+                        </div>
+                    </form>
+
+                    <hr class="my-4">
+
+                    <h5><i class="bi bi-lightbulb"></i> Search Examples</h5>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <tbody>
+                                <tr>
+                                    <td><code>has:attachment</code></td>
+                                    <td>Emails with any attachment</td>
+                                </tr>
+                                <tr>
+                                    <td><code>has:attachment filename:pdf</code></td>
+                                    <td>Emails with PDF attachments</td>
+                                </tr>
+                                <tr>
+                                    <td><code>from:accounting@company.com</code></td>
+                                    <td>Emails from specific sender</td>
+                                </tr>
+                                <tr>
+                                    <td><code>subject:invoice</code></td>
+                                    <td>Emails with "invoice" in subject</td>
+                                </tr>
+                                <tr>
+                                    <td><code>has:attachment invoice OR receipt</code></td>
+                                    <td>Attachments with invoice or receipt keywords</td>
+                                </tr>
+                                <tr>
+                                    <td><code>larger:1M has:attachment</code></td>
+                                    <td>Attachments larger than 1MB</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mt-3">
+                <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

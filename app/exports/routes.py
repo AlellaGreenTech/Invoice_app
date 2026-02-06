@@ -50,6 +50,9 @@ def export_csv(batch_id):
 @login_required
 def export_sheets(batch_id):
     """Export batch to Google Sheets."""
+    from flask import current_app
+    import traceback
+
     batch = Batch.query.get_or_404(batch_id)
 
     # Ensure user owns this batch
@@ -62,10 +65,12 @@ def export_sheets(batch_id):
     ).all()
 
     try:
-        # Get optional parameters
-        data = request.get_json() or {}
+        # Get optional parameters (silent=True to handle empty body)
+        data = request.get_json(silent=True) or {}
         spreadsheet_name = data.get('spreadsheet_name')
         existing_spreadsheet_id = data.get('existing_spreadsheet_id')
+
+        current_app.logger.info(f'Starting Google Sheets export for batch {batch_id}')
 
         # Upload to Google Sheets
         uploader = SheetsUploader(current_user)
@@ -79,6 +84,8 @@ def export_sheets(batch_id):
         else:
             result = uploader.export_batch(batch, invoices, spreadsheet_name)
 
+        current_app.logger.info(f'Successfully exported to Google Sheets: {result}')
+
         return jsonify({
             'message': 'Successfully exported to Google Sheets',
             'url': result['spreadsheet_url'],
@@ -87,6 +94,7 @@ def export_sheets(batch_id):
         })
 
     except Exception as e:
+        current_app.logger.error(f'Google Sheets export error: {traceback.format_exc()}')
         return jsonify({'error': f'Failed to export to Google Sheets: {str(e)}'}), 500
 
 

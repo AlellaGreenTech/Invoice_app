@@ -33,11 +33,13 @@ def create_app(config_name='development'):
     from app.invoices import invoices_bp
     from app.exports import exports_bp
     from app.settings import settings_bp
+    from app.emails import emails_bp
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(invoices_bp, url_prefix='/invoices')
     app.register_blueprint(exports_bp, url_prefix='/export')
     app.register_blueprint(settings_bp, url_prefix='/settings')
+    app.register_blueprint(emails_bp, url_prefix='/emails')
 
     # Register main routes
     from app import routes

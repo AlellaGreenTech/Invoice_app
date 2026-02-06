@@ -100,6 +100,16 @@ class Invoice(db.Model):
             return True
         return False
 
+    def needs_fix(self):
+        """Check if this invoice has critical issues that need fixing (no amount or unknown category)."""
+        if self.manually_reviewed:
+            return False
+        if self.total_amount is None:
+            return True
+        if self.category is None or self.category == 'Other':
+            return True
+        return False
+
 
 class Category(db.Model):
     """Category model for invoice categorization."""

@@ -73,11 +73,13 @@ def batch_status(batch_id):
     if batch.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
 
-    # Count invoices needing review
+    # Count invoices needing review and fix
     needs_review_count = 0
+    needs_fix_count = 0
     if batch.status == 'completed':
         invoices = Invoice.query.filter_by(batch_id=batch_id, status='categorized').all()
         needs_review_count = sum(1 for inv in invoices if inv.needs_review())
+        needs_fix_count = sum(1 for inv in invoices if inv.needs_fix())
 
     return jsonify({
         'id': batch.id,
@@ -87,7 +89,8 @@ def batch_status(batch_id):
         'failed_invoices': batch.failed_invoices,
         'progress_percentage': batch.progress_percentage,
         'error_message': batch.error_message,
-        'needs_review_count': needs_review_count
+        'needs_review_count': needs_review_count,
+        'needs_fix_count': needs_fix_count
     })
 
 
@@ -164,6 +167,108 @@ def batch_details(batch_id):
     )
 
 
+@invoices_bp.route('/batch/<int:batch_id>/failed')
+@login_required
+def batch_failed(batch_id):
+    """Show failed invoices for a batch."""
+    batch = Batch.query.get_or_404(batch_id)
+
+    # Ensure user owns this batch
+    if batch.user_id != current_user.id:
+        flash('Unauthorized access', 'error')
+        return redirect(url_for('main.dashboard'))
+
+    # Get failed invoices
+    failed_invoices = Invoice.query.filter_by(
+        batch_id=batch_id,
+        status='failed'
+    ).order_by(Invoice.filename).all()
+
+    return render_template(
+        'invoices/failed.html',
+        batch=batch,
+        invoices=failed_invoices
+    )
+
+
+@invoices_bp.route('/<int:invoice_id>/retry', methods=['POST'])
+@login_required
+def retry_invoice(invoice_id):
+    """Retry processing a failed invoice."""
+    invoice = Invoice.query.get_or_404(invoice_id)
+
+    # Ensure user owns this invoice's batch
+    if invoice.batch.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if invoice.status != 'failed':
+        return jsonify({'error': 'Invoice is not in failed state'}), 400
+
+    try:
+        # Reprocess the invoice
+        from app.invoices.drive_handler import DriveHandler
+        from app.invoices.pdf_parser import PDFParser
+        from app.invoices.categorizer import InvoiceCategorizer
+        from app.utils.currency import CurrencyConverter
+
+        # Get user settings
+        user_settings = UserSettings.query.filter_by(user_id=current_user.id).first()
+        base_currency = user_settings.base_currency if user_settings else 'EUR'
+
+        # Download and process the PDF
+        drive_handler = DriveHandler(current_user)
+        pdf_content = drive_handler.download_file_to_memory(invoice.drive_file_id)
+
+        # Parse PDF
+        parser = PDFParser()
+        extracted_data = parser.parse(pdf_content)
+
+        # Update invoice with extracted data
+        invoice.vendor_name = extracted_data.get('vendor_name')
+        invoice.invoice_number = extracted_data.get('invoice_number')
+        invoice.invoice_date = extracted_data.get('invoice_date')
+        invoice.total_amount = extracted_data.get('total_amount')
+        invoice.currency = extracted_data.get('currency', 'EUR')
+        invoice.currency_confidence = extracted_data.get('currency_confidence')
+        invoice.raw_text = extracted_data.get('raw_text', '')[:5000]
+        invoice.extraction_method = extracted_data.get('extraction_method', 'pdfplumber')
+        invoice.status = 'extracted'
+
+        # Categorize
+        categorizer = InvoiceCategorizer()
+        category_result = categorizer.categorize(extracted_data)
+        invoice.category = category_result.get('category', 'Other')
+        invoice.category_confidence = category_result.get('confidence', 0.0)
+
+        # Convert currency
+        if invoice.total_amount and invoice.currency:
+            invoice.converted_amount = CurrencyConverter.convert(
+                invoice.total_amount,
+                invoice.currency,
+                base_currency
+            )
+
+        invoice.status = 'categorized'
+        invoice.error_message = None
+        db.session.commit()
+
+        # Update batch counts
+        batch = invoice.batch
+        batch.failed_invoices = Invoice.query.filter_by(batch_id=batch.id, status='failed').count()
+        batch.processed_invoices = Invoice.query.filter_by(batch_id=batch.id).filter(
+            Invoice.status.in_(['extracted', 'categorized'])
+        ).count()
+        db.session.commit()
+
+        return jsonify({'message': 'Invoice reprocessed successfully'})
+
+    except Exception as e:
+        invoice.status = 'failed'
+        invoice.error_message = str(e)
+        db.session.commit()
+        return jsonify({'error': f'Reprocessing failed: {str(e)}'}), 500
+
+
 @invoices_bp.route('/<int:invoice_id>/category', methods=['PUT'])
 @login_required
 def update_category(invoice_id):
@@ -230,6 +335,19 @@ def update_invoice(invoice_id):
 
     # Mark as manually reviewed
     invoice.manually_reviewed = True
+
+    # If this was a failed invoice and now has required data, mark it as categorized
+    if invoice.status == 'failed' and invoice.total_amount and invoice.currency and invoice.category:
+        invoice.status = 'categorized'
+        invoice.error_message = None
+
+        # Update batch counts
+        batch = invoice.batch
+        batch.failed_invoices = Invoice.query.filter_by(batch_id=batch.id, status='failed').count()
+        batch.processed_invoices = Invoice.query.filter_by(batch_id=batch.id).filter(
+            Invoice.status.in_(['extracted', 'categorized'])
+        ).count()
+
     db.session.commit()
 
     return jsonify({'message': 'Invoice updated successfully'})
@@ -262,14 +380,21 @@ def batch_review(batch_id):
         flash('Unauthorized access', 'error')
         return redirect(url_for('main.dashboard'))
 
+    # Check if we're in "fix" mode (only show invoices with critical issues)
+    mode = request.args.get('mode', 'all')
+
     # Get invoices needing review
     invoices = Invoice.query.filter_by(batch_id=batch_id, status='categorized').all()
-    review_invoices = [inv for inv in invoices if inv.needs_review()]
+    if mode == 'fix':
+        review_invoices = [inv for inv in invoices if inv.needs_fix()]
+    else:
+        review_invoices = [inv for inv in invoices if inv.needs_review()]
 
     return render_template(
         'invoices/review.html',
         batch=batch,
-        total_review_count=len(review_invoices)
+        total_review_count=len(review_invoices),
+        mode=mode
     )
 
 
@@ -283,9 +408,17 @@ def get_next_review(batch_id):
     if batch.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
 
+    # Check if we're in "fix" mode
+    mode = request.args.get('mode', 'all')
+
     # Get invoices needing review
     invoices = Invoice.query.filter_by(batch_id=batch_id, status='categorized').all()
-    review_invoices = [inv for inv in invoices if inv.needs_review()]
+    if mode == 'fix':
+        review_invoices = [inv for inv in invoices if inv.needs_fix()]
+        total_to_review = sum(1 for inv in invoices if inv.needs_fix() or inv.manually_reviewed)
+    else:
+        review_invoices = [inv for inv in invoices if inv.needs_review()]
+        total_to_review = len(invoices)
 
     if not review_invoices:
         return jsonify({
@@ -295,7 +428,7 @@ def get_next_review(batch_id):
 
     # Get the first one
     invoice = review_invoices[0]
-    reviewed_count = len(invoices) - len(review_invoices)
+    reviewed_count = total_to_review - len(review_invoices)
 
     return jsonify({
         'complete': False,
@@ -313,7 +446,7 @@ def get_next_review(batch_id):
         },
         'progress': {
             'reviewed': reviewed_count,
-            'total': len(invoices),
+            'total': total_to_review,
             'remaining': len(review_invoices)
         }
     })

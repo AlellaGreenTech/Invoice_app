@@ -1,6 +1,5 @@
-"""Google Sheets export functionality."""
-import gspread
-from google.oauth2.credentials import Credentials
+"""Google Sheets export functionality using googleapiclient."""
+from googleapiclient.discovery import build
 from flask import current_app
 from app.auth.google_auth import GoogleAuth
 
@@ -17,7 +16,8 @@ class SheetsUploader:
         """
         self.user = user
         self.credentials = GoogleAuth.get_credentials_from_user(user)
-        self.client = gspread.authorize(self.credentials)
+        self.sheets_service = build('sheets', 'v4', credentials=self.credentials)
+        self.drive_service = build('drive', 'v3', credentials=self.credentials)
 
     def export_batch(self, batch, invoices, spreadsheet_name=None):
         """
@@ -43,11 +43,24 @@ class SheetsUploader:
                 spreadsheet_name = f'Invoices Batch #{batch.id} - {timestamp}'
 
             # Create new spreadsheet
-            spreadsheet = self.client.create(spreadsheet_name)
+            spreadsheet_body = {
+                'properties': {
+                    'title': spreadsheet_name
+                },
+                'sheets': [{
+                    'properties': {
+                        'title': f'Batch {batch.id}'
+                    }
+                }]
+            }
 
-            # Get the first sheet
-            sheet = spreadsheet.sheet1
-            sheet.update_title(f'Batch {batch.id}')
+            spreadsheet = self.sheets_service.spreadsheets().create(
+                body=spreadsheet_body
+            ).execute()
+
+            spreadsheet_id = spreadsheet['spreadsheetId']
+            sheet_id = spreadsheet['sheets'][0]['properties']['sheetId']
+            sheet_name = spreadsheet['sheets'][0]['properties']['title']
 
             # Prepare data
             headers = [
@@ -93,25 +106,46 @@ class SheetsUploader:
                 rows.append(['Date Range', f'{batch.date_range_start} to {batch.date_range_end}'])
 
             # Update sheet with all data
-            sheet.update('A1', rows)
+            self.sheets_service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f'{sheet_name}!A1',
+                valueInputOption='RAW',
+                body={'values': rows}
+            ).execute()
 
-            # Format header row
-            sheet.format('A1:I1', {
-                'textFormat': {'bold': True},
-                'backgroundColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}
-            })
+            # Format header row (bold and background color)
+            requests = [{
+                'repeatCell': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'startRowIndex': 0,
+                        'endRowIndex': 1
+                    },
+                    'cell': {
+                        'userEnteredFormat': {
+                            'textFormat': {'bold': True},
+                            'backgroundColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}
+                        }
+                    },
+                    'fields': 'userEnteredFormat(textFormat,backgroundColor)'
+                }
+            }]
 
-            # Auto-resize columns
-            sheet.columns_auto_resize(0, len(headers))
+            self.sheets_service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={'requests': requests}
+            ).execute()
+
+            spreadsheet_url = f'https://docs.google.com/spreadsheets/d/{spreadsheet_id}'
 
             current_app.logger.info(
-                f'Exported batch {batch.id} to Google Sheets: {spreadsheet.url}'
+                f'Exported batch {batch.id} to Google Sheets: {spreadsheet_url}'
             )
 
             return {
-                'spreadsheet_id': spreadsheet.id,
-                'spreadsheet_url': spreadsheet.url,
-                'sheet_name': sheet.title
+                'spreadsheet_id': spreadsheet_id,
+                'spreadsheet_url': spreadsheet_url,
+                'sheet_name': sheet_name
             }
 
         except Exception as e:
@@ -132,16 +166,27 @@ class SheetsUploader:
             dict: Export result
         """
         try:
-            # Open existing spreadsheet
-            spreadsheet = self.client.open_by_key(spreadsheet_id)
-
             # Create new sheet
             if not sheet_name:
                 sheet_name = f'Batch {batch.id}'
 
-            sheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+            # Add new sheet
+            requests = [{
+                'addSheet': {
+                    'properties': {
+                        'title': sheet_name
+                    }
+                }
+            }]
 
-            # Prepare and add data (same as export_batch)
+            response = self.sheets_service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={'requests': requests}
+            ).execute()
+
+            new_sheet_id = response['replies'][0]['addSheet']['properties']['sheetId']
+
+            # Prepare data
             headers = [
                 'Invoice Number',
                 'Vendor Name',
@@ -170,18 +215,43 @@ class SheetsUploader:
                 ]
                 rows.append(row)
 
-            sheet.update('A1', rows)
+            # Update sheet with data
+            self.sheets_service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f'{sheet_name}!A1',
+                valueInputOption='RAW',
+                body={'values': rows}
+            ).execute()
 
             # Format header
-            sheet.format('A1:I1', {
-                'textFormat': {'bold': True},
-                'backgroundColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}
-            })
+            requests = [{
+                'repeatCell': {
+                    'range': {
+                        'sheetId': new_sheet_id,
+                        'startRowIndex': 0,
+                        'endRowIndex': 1
+                    },
+                    'cell': {
+                        'userEnteredFormat': {
+                            'textFormat': {'bold': True},
+                            'backgroundColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}
+                        }
+                    },
+                    'fields': 'userEnteredFormat(textFormat,backgroundColor)'
+                }
+            }]
+
+            self.sheets_service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={'requests': requests}
+            ).execute()
+
+            spreadsheet_url = f'https://docs.google.com/spreadsheets/d/{spreadsheet_id}'
 
             return {
-                'spreadsheet_id': spreadsheet.id,
-                'spreadsheet_url': spreadsheet.url,
-                'sheet_name': sheet.title
+                'spreadsheet_id': spreadsheet_id,
+                'spreadsheet_url': spreadsheet_url,
+                'sheet_name': sheet_name
             }
 
         except Exception as e:
@@ -190,7 +260,7 @@ class SheetsUploader:
 
     def create_summary_sheet(self, batch, category_stats):
         """
-        Create a summary-only sheet with charts.
+        Create a summary-only sheet.
 
         Args:
             batch: Batch model instance
@@ -204,9 +274,24 @@ class SheetsUploader:
             timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M')
             spreadsheet_name = f'Invoice Summary - Batch #{batch.id} - {timestamp}'
 
-            spreadsheet = self.client.create(spreadsheet_name)
-            sheet = spreadsheet.sheet1
-            sheet.update_title('Summary')
+            # Create spreadsheet
+            spreadsheet_body = {
+                'properties': {
+                    'title': spreadsheet_name
+                },
+                'sheets': [{
+                    'properties': {
+                        'title': 'Summary'
+                    }
+                }]
+            }
+
+            spreadsheet = self.sheets_service.spreadsheets().create(
+                body=spreadsheet_body
+            ).execute()
+
+            spreadsheet_id = spreadsheet['spreadsheetId']
+            sheet_name = 'Summary'
 
             # Prepare summary data
             rows = [
@@ -234,25 +319,20 @@ class SheetsUploader:
                     float(total) if total else 0
                 ])
 
-            sheet.update('A1', rows)
+            # Update sheet
+            self.sheets_service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f'{sheet_name}!A1',
+                valueInputOption='RAW',
+                body={'values': rows}
+            ).execute()
 
-            # Format title
-            sheet.format('A1', {
-                'textFormat': {'bold': True, 'fontSize': 14}
-            })
-
-            # Format headers
-            sheet.format('A7', {'textFormat': {'bold': True}})
-            sheet.format('A13', {'textFormat': {'bold': True}})
-            sheet.format('A14:C14', {
-                'textFormat': {'bold': True},
-                'backgroundColor': {'red': 0.2, 'green': 0.4, 'blue': 0.8}
-            })
+            spreadsheet_url = f'https://docs.google.com/spreadsheets/d/{spreadsheet_id}'
 
             return {
-                'spreadsheet_id': spreadsheet.id,
-                'spreadsheet_url': spreadsheet.url,
-                'sheet_name': sheet.title
+                'spreadsheet_id': spreadsheet_id,
+                'spreadsheet_url': spreadsheet_url,
+                'sheet_name': sheet_name
             }
 
         except Exception as e:

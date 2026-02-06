@@ -27,8 +27,9 @@ class GoogleAuth:
             'openid',
             'https://www.googleapis.com/auth/userinfo.email',
             'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/spreadsheets'
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/gmail.readonly'
         ]
 
     def get_authorization_url(self):
@@ -47,7 +48,7 @@ class GoogleAuth:
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
-            prompt='consent'
+            prompt='consent select_account'
         )
 
         return authorization_url, state

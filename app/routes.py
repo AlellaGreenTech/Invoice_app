@@ -20,12 +20,15 @@ def dashboard():
     from app.models import Batch, Invoice
     batches = Batch.query.filter_by(user_id=current_user.id).order_by(Batch.created_at.desc()).limit(10).all()
 
-    # Calculate needs_review_count for each completed batch
+    # Calculate needs_review_count and needs_fix_count for each completed batch
     for batch in batches:
         if batch.status == 'completed':
             invoices = Invoice.query.filter_by(batch_id=batch.id, status='categorized').all()
             batch.needs_review_count = sum(1 for inv in invoices if inv.needs_review())
+            # Count invoices that specifically need fixing (no amount or unknown category)
+            batch.needs_fix_count = sum(1 for inv in invoices if inv.needs_fix())
         else:
             batch.needs_review_count = 0
+            batch.needs_fix_count = 0
 
     return render_template('dashboard.html', batches=batches)

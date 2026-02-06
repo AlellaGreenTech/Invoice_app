@@ -97,25 +97,54 @@ function updateStatus() {
             // Check if completed
             if (data.status === 'completed') {
                 clearInterval(pollInterval);
+
+                // Set progress to 100% when completed
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('progressBar').textContent = '100%';
+                document.getElementById('progressBar').setAttribute('aria-valuenow', 100);
+                document.getElementById('progressBar').classList.remove('progress-bar-striped');
                 document.getElementById('progressBar').classList.remove('progress-bar-animated');
+                document.getElementById('progressBar').classList.remove('bg-primary');
+                document.getElementById('progressBar').classList.add('bg-success');
+
+                // Update progress text
+                const totalHandled = data.processed_invoices + data.failed_invoices;
+                document.getElementById('progressText').textContent = totalHandled + '/' + totalHandled + ' invoices';
+                document.getElementById('totalCount').textContent = totalHandled;
+
+                // Update header to show completion
+                document.querySelector('.card-header').classList.remove('bg-primary');
+                document.querySelector('.card-header').classList.add('bg-success');
+                document.querySelector('.card-header h4').innerHTML =
+                    '<i class="bi bi-check-circle"></i> Batch #' + batchId + ' Completed';
+
+                // Build completion message with buttons
+                let buttonsHtml = '<div class="d-grid gap-2 mt-3">' +
+                    '<a href="/invoices/batch/' + batchId + '/summary" class="btn btn-success btn-lg">' +
+                    '<i class="bi bi-check-circle"></i> View Summary</a>';
+
+                if (data.needs_fix_count > 0) {
+                    buttonsHtml += '<a href="/invoices/batch/' + batchId + '/review?mode=fix" class="btn btn-danger">' +
+                        '<i class="bi bi-exclamation-triangle"></i> Fix Issues (' + data.needs_fix_count + ')</a>';
+                }
 
                 if (data.needs_review_count > 0) {
-                    document.getElementById('statusMessage').className = 'alert alert-warning';
+                    buttonsHtml += '<a href="/invoices/batch/' + batchId + '/review" class="btn btn-warning">' +
+                        '<i class="bi bi-check2-square"></i> Review All (' + data.needs_review_count + ')</a>';
+                }
+
+                buttonsHtml += '</div>';
+
+                if (data.needs_review_count > 0) {
+                    document.getElementById('statusMessage').className = 'alert alert-success';
                     document.getElementById('statusMessage').innerHTML =
-                        '<i class="bi bi-exclamation-triangle"></i> Processing completed! ' +
-                        '<strong>' + data.needs_review_count + ' invoice(s) need review</strong>.' +
-                        '<div class="mt-3">' +
-                        '<a href="/invoices/batch/' + batchId + '/review" class="btn btn-warning me-2">' +
-                        '<i class="bi bi-check2-square"></i> Review Now</a>' +
-                        '<a href="/invoices/batch/' + batchId + '/summary" class="btn btn-outline-secondary">' +
-                        'Skip to Summary</a></div>';
+                        '<i class="bi bi-check-circle"></i> <strong>Processing completed!</strong> ' +
+                        data.needs_review_count + ' invoice(s) may need review.' + buttonsHtml;
                 } else {
                     document.getElementById('statusMessage').className = 'alert alert-success';
                     document.getElementById('statusMessage').innerHTML =
-                        '<i class="bi bi-check-circle"></i> Processing completed! Redirecting to summary...';
-                    setTimeout(() => {
-                        window.location.href = `/invoices/batch/${batchId}/summary`;
-                    }, 2000);
+                        '<i class="bi bi-check-circle"></i> <strong>Processing completed!</strong> ' +
+                        'All invoices processed successfully.' + buttonsHtml;
                 }
             } else if (data.status === 'failed') {
                 clearInterval(pollInterval);

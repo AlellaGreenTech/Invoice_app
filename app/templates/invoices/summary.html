@@ -195,23 +195,37 @@ new Chart(document.getElementById('amountChart'), {
 });
 
 function exportToSheets() {
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Exporting...';
+
     fetch('/export/sheets/{{ batch.id }}', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({})
     })
     .then(response => response.json())
     .then(data => {
-        if (data.url) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else if (data.url) {
             window.open(data.url, '_blank');
+            alert('Successfully exported to Google Sheets!');
         } else {
-            alert('Export successful!');
+            alert('Export completed!');
         }
     })
     .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
         console.error('Error:', error);
-        alert('Failed to export to Google Sheets');
+        alert('Failed to export to Google Sheets: ' + error.message);
     });
 }
 </script>

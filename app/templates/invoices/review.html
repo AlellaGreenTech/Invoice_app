@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Review Invoices - Batch #{{ batch.id }}{% endblock %}
+{% block title %}{% if mode == 'fix' %}Fix Issues{% else %}Review Invoices{% endif %} - Batch #{{ batch.id }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-4">
@@ -8,7 +8,11 @@
         <div class="col">
             <div class="d-flex justify-content-between align-items-center">
                 <h4 class="mb-0">
+                    {% if mode == 'fix' %}
+                    <i class="bi bi-exclamation-triangle text-danger"></i> Fix Issues - Batch #{{ batch.id }}
+                    {% else %}
                     <i class="bi bi-check2-square"></i> Review Invoices - Batch #{{ batch.id }}
+                    {% endif %}
                 </h4>
                 <div class="d-flex align-items-center gap-3">
                     <div class="progress" style="width: 200px; height: 8px;">
@@ -109,19 +113,19 @@
                         <div class="mb-4">
                             <label for="category" class="form-label">Category</label>
                             <div class="input-group">
-                                <input type="text" class="form-control" id="category" list="categoryList" placeholder="Select or type a category">
+                                <select class="form-select" id="category">
+                                    <option value="">-- Select Category --</option>
+                                    <option value="Travel">Travel</option>
+                                    <option value="Software">Software</option>
+                                    <option value="Professional Services">Professional Services</option>
+                                    <option value="Marketing">Marketing</option>
+                                    <option value="Office Supplies">Office Supplies</option>
+                                    <option value="Utilities">Utilities</option>
+                                    <option value="Equipment">Equipment</option>
+                                    <option value="Other">Other</option>
+                                </select>
                                 <span id="categoryConfidence" class="input-group-text"></span>
                             </div>
-                            <datalist id="categoryList">
-                                <option value="Office Supplies">
-                                <option value="Travel">
-                                <option value="Software">
-                                <option value="Professional Services">
-                                <option value="Utilities">
-                                <option value="Marketing">
-                                <option value="Equipment">
-                                <option value="Other">
-                            </datalist>
                         </div>
 
                         <!-- Action buttons -->
@@ -158,6 +162,7 @@
 
 <script>
 const batchId = {{ batch.id }};
+const reviewMode = '{{ mode|default("all") }}';
 let currentInvoice = null;
 
 function formatConfidence(confidence) {
@@ -194,7 +199,7 @@ function loadNextInvoice() {
     document.getElementById('pdfFrame').style.display = 'none';
     document.getElementById('pdfDownloadLink').style.display = 'none';
 
-    fetch(`/invoices/batch/${batchId}/review/next`)
+    fetch(`/invoices/batch/${batchId}/review/next?mode=${reviewMode}`)
         .then(response => response.json())
         .then(data => {
             document.getElementById('loadingState').style.display = 'none';

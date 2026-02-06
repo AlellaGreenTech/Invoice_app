@@ -10,8 +10,14 @@
             <p class="text-muted">Welcome back, {{ current_user.name or current_user.email }}</p>
         </div>
         <div class="col-auto">
-            <a href="{{ url_for('invoices.upload') }}" class="btn btn-primary">
+            <a href="{{ url_for('emails.search') }}" class="btn btn-outline-danger me-2">
+                <i class="bi bi-envelope"></i> Gmail Search
+            </a>
+            <a href="{{ url_for('invoices.upload') }}" class="btn btn-primary me-2">
                 <i class="bi bi-plus-circle"></i> New Batch
+            </a>
+            <a href="/auth/logout" class="btn btn-outline-secondary">
+                <i class="bi bi-box-arrow-right"></i> Logout
             </a>
         </div>
     </div>
@@ -55,7 +61,9 @@
                                         <td>
                                             {{ batch.processed_invoices }}/{{ batch.total_invoices }}
                                             {% if batch.failed_invoices > 0 %}
-                                                <span class="text-danger">({{ batch.failed_invoices }} failed)</span>
+                                                <a href="{{ url_for('invoices.batch_failed', batch_id=batch.id) }}" class="text-danger text-decoration-none" title="View failed invoices">
+                                                    ({{ batch.failed_invoices }} failed <i class="bi bi-box-arrow-up-right"></i>)
+                                                </a>
                                             {% endif %}
                                         </td>
                                         <td>
@@ -78,9 +86,14 @@
                                                         <i class="bi bi-download"></i> CSV
                                                     </a>
                                                 </div>
+                                                {% if batch.needs_fix_count and batch.needs_fix_count > 0 %}
+                                                    <a href="{{ url_for('invoices.batch_review', batch_id=batch.id, mode='fix') }}" class="btn btn-sm btn-danger ms-1" title="Fix {{ batch.needs_fix_count }} invoice(s) with missing data">
+                                                        <i class="bi bi-exclamation-triangle"></i> Fix Issues ({{ batch.needs_fix_count }})
+                                                    </a>
+                                                {% endif %}
                                                 {% if batch.needs_review_count and batch.needs_review_count > 0 %}
-                                                    <a href="{{ url_for('invoices.batch_review', batch_id=batch.id) }}" class="btn btn-sm btn-warning ms-1" title="Review {{ batch.needs_review_count }} invoice(s)">
-                                                        <i class="bi bi-check2-square"></i> Review ({{ batch.needs_review_count }})
+                                                    <a href="{{ url_for('invoices.batch_review', batch_id=batch.id) }}" class="btn btn-sm btn-warning ms-1" title="Review all {{ batch.needs_review_count }} invoice(s)">
+                                                        <i class="bi bi-check2-square"></i> Review All ({{ batch.needs_review_count }})
                                                     </a>
                                                 {% endif %}
                                             {% elif batch.status == 'processing' %}
