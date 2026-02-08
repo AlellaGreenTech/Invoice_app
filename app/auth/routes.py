@@ -73,8 +73,9 @@ def callback():
     try:
         google_auth = GoogleAuth()
 
-        # Determine which scopes to use for token exchange
-        scopes = GMAIL_SCOPES if oauth_flow == 'gmail' else LOGIN_SCOPES
+        # For gmail flow, Google returns ALL scopes (old + new) due to
+        # include_granted_scopes, so we must pass the combined set
+        scopes = LOGIN_SCOPES + GMAIL_SCOPES if oauth_flow == 'gmail' else LOGIN_SCOPES
 
         # Fix request URL scheme for reverse proxy (Render, etc.)
         authorization_response = request.url
