@@ -5,19 +5,20 @@ from datetime import timedelta
 
 class Config:
     """Base configuration."""
-    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'postgresql://invoice_user:invoice_pass@localhost:5432/invoice_app')
+    # Strip all env vars — Render's dashboard often adds trailing whitespace/newlines
+    SECRET_KEY = (os.getenv('SECRET_KEY') or 'dev-secret-key-change-in-production').strip()
+    SQLALCHEMY_DATABASE_URI = (os.getenv('DATABASE_URL') or 'postgresql://invoice_user:invoice_pass@localhost:5432/invoice_app').strip()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Redis and Celery
-    REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
+    REDIS_URL = (os.getenv('REDIS_URL') or 'redis://redis:6379/0').strip()
     CELERY_BROKER_URL = REDIS_URL
     CELERY_RESULT_BACKEND = REDIS_URL
     # Celery 5.x uses lowercase config keys
     broker_url = REDIS_URL
     result_backend = REDIS_URL
 
-    # Google OAuth (strip whitespace — Render env vars sometimes include trailing newlines)
+    # Google OAuth
     GOOGLE_CLIENT_ID = (os.getenv('GOOGLE_CLIENT_ID') or '').strip()
     GOOGLE_CLIENT_SECRET = (os.getenv('GOOGLE_CLIENT_SECRET') or '').strip()
     GOOGLE_REDIRECT_URI = (os.getenv('GOOGLE_REDIRECT_URI') or 'http://localhost:5000/auth/callback').strip()
@@ -27,7 +28,7 @@ class Config:
     GOOGLE_DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
     # Anthropic Claude
-    ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+    ANTHROPIC_API_KEY = (os.getenv('ANTHROPIC_API_KEY') or '').strip()
 
     # File Upload
     MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 104857600))  # 100MB
