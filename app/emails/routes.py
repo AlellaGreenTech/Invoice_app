@@ -21,6 +21,10 @@ def _check_gmail_access():
 @login_required
 def search():
     """Display search form and handle search submission."""
+    # Show connect prompt if Gmail not yet authorized
+    if not session.get('gmail_authorized'):
+        return render_template('emails/connect_gmail.html')
+
     if request.method == 'POST':
         query = request.form.get('query', '').strip()
         date_from = request.form.get('date_from', '').strip()
