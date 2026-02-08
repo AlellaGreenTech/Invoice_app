@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block title %}Upload PDFs - Invoice Processor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .file-list {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    .drop-zone {
+        border: 2px dashed #dee2e6;
+        border-radius: 0.5rem;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+        border-color: #0d6efd;
+        background-color: #f0f6ff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="bi bi-upload"></i> Upload PDF Invoices
+                    </h4>
+                </div>
+                <div class="card-body p-4">
+                    <form id="uploadForm" method="POST" action="{{ url_for('invoices.process_local') }}" enctype="multipart/form-data">
+                        <!-- Folder/file picker -->
+                        <div class="mb-4">
+                            <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                                <i class="bi bi-folder2-open text-primary" style="font-size: 3rem;"></i>
+                                <h5 class="mt-2">Select a folder of PDFs</h5>
+                                <p class="text-muted mb-0">Click to browse or drag and drop files here</p>
+                            </div>
+                            <input type="file" id="fileInput" name="pdfs" multiple webkitdirectory accept=".pdf"
+                                   style="display: none;" onchange="handleFiles(this.files)">
+                            <div class="form-text mt-2">
+                                <i class="bi bi-info-circle"></i>
+                                Select a folder containing PDF invoices. Only <code>.pdf</code> files will be processed.
+                                <br>
+                                <a href="#" id="switchToMultiFile" class="text-decoration-none">
+                                    Or select individual files instead
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- Optional date range filter -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Date Range Filter (optional)</label>
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label for="dateStart" class="form-label small text-muted">From</label>
+                                    <input type="date" class="form-control" id="dateStart" name="date_start">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="dateEnd" class="form-label small text-muted">To</label>
+                                    <input type="date" class="form-control" id="dateEnd" name="date_end">
+                                </div>
+                            </div>
+                            <div class="form-text">Filter files by last-modified date before uploading.</div>
+                        </div>
+
+                        <!-- File list preview -->
+                        <div id="filePreview" class="mb-4" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-file-earmark-pdf text-danger"></i>
+                                    <span id="fileCount">0</span> PDF files selected
+                                    <span id="fileSizeBadge" class="badge bg-secondary ms-2"></span>
+                                </h6>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearFiles()">
+                                    <i class="bi bi-x-lg"></i> Clear
+                                </button>
+                            </div>
+                            <div id="sizeWarning" class="alert alert-warning" style="display: none;">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                Total file size exceeds 100MB. Please remove some files.
+                            </div>
+                            <div class="file-list border rounded p-2" id="fileList"></div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" disabled>
+                                <i class="bi bi-play-circle"></i> Upload & Process
+                            </button>
+                            <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Back to Dashboard
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Instructions Card -->
+            <div class="card shadow-sm mt-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">What happens next?</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold">
+                                <i class="bi bi-1-circle text-primary"></i> Extraction
+                            </h6>
+                            <p class="text-muted small">
+                                We'll extract data from each PDF invoice,
+                                including vendor name, date, amount, and currency.
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold">
+                                <i class="bi bi-2-circle text-primary"></i> Categorization
+                            </h6>
+                            <p class="text-muted small">
+                                Claude AI will automatically categorize each invoice
+                                (e.g., Office Supplies, Travel, Software, etc.).
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold">
+                                <i class="bi bi-3-circle text-primary"></i> Summary
+                            </h6>
+                            <p class="text-muted small">
+                                View a dashboard with total amounts, category breakdowns,
+                                and date ranges.
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold">
+                                <i class="bi bi-4-circle text-primary"></i> Export
+                            </h6>
+                            <p class="text-muted small">
+                                Download results as CSV or export directly to Google Sheets
+                                for further analysis.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const MAX_SIZE = 100 * 1024 * 1024; // 100MB
+let selectedFiles = [];
+let isFolderMode = true;
+
+const fileInput = document.getElementById('fileInput');
+const switchLink = document.getElementById('switchToMultiFile');
+const dropZone = document.getElementById('dropZone');
+const dateStart = document.getElementById('dateStart');
+const dateEnd = document.getElementById('dateEnd');
+
+switchLink.addEventListener('click', function(e) {
+    e.preventDefault();
+    isFolderMode = !isFolderMode;
+    if (isFolderMode) {
+        fileInput.setAttribute('webkitdirectory', '');
+        switchLink.textContent = 'Or select individual files instead';
+        dropZone.querySelector('h5').textContent = 'Select a folder of PDFs';
+    } else {
+        fileInput.removeAttribute('webkitdirectory');
+        switchLink.textContent = 'Or select a folder instead';
+        dropZone.querySelector('h5').textContent = 'Select PDF files';
+    }
+    clearFiles();
+});
+
+// Drag and drop
+dropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', function() {
+    dropZone.classList.remove('dragover');
+});
+dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+});
+
+// Date range filter
+dateStart.addEventListener('change', updateFileList);
+dateEnd.addEventListener('change', updateFileList);
+
+function handleFiles(files) {
+    selectedFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    updateFileList();
+}
+
+function updateFileList() {
+    const startDate = dateStart.value ? new Date(dateStart.value) : null;
+    const endDate = dateEnd.value ? new Date(dateEnd.value + 'T23:59:59') : null;
+
+    let filtered = selectedFiles;
+    if (startDate || endDate) {
+        filtered = selectedFiles.filter(f => {
+            const modified = new Date(f.lastModified);
+            if (startDate && modified < startDate) return false;
+            if (endDate && modified > endDate) return false;
+            return true;
+        });
+    }
+
+    const preview = document.getElementById('filePreview');
+    const fileList = document.getElementById('fileList');
+    const fileCount = document.getElementById('fileCount');
+    const fileSizeBadge = document.getElementById('fileSizeBadge');
+    const sizeWarning = document.getElementById('sizeWarning');
+    const submitBtn = document.getElementById('submitBtn');
+
+    if (filtered.length === 0) {
+        preview.style.display = 'none';
+        submitBtn.disabled = true;
+        return;
+    }
+
+    preview.style.display = 'block';
+    fileCount.textContent = filtered.length;
+
+    const totalSize = filtered.reduce((sum, f) => sum + f.size, 0);
+    fileSizeBadge.textContent = formatSize(totalSize);
+
+    const overLimit = totalSize > MAX_SIZE;
+    sizeWarning.style.display = overLimit ? 'block' : 'none';
+    fileSizeBadge.className = 'badge ms-2 ' + (overLimit ? 'bg-danger' : 'bg-secondary');
+    submitBtn.disabled = overLimit;
+
+    // Build file list HTML
+    let html = '<table class="table table-sm table-borderless mb-0"><tbody>';
+    filtered.forEach(f => {
+        const modified = new Date(f.lastModified);
+        html += `<tr>
+            <td class="text-truncate" style="max-width: 300px;" title="${f.name}">
+                <i class="bi bi-file-earmark-pdf text-danger"></i> ${f.name}
+            </td>
+            <td class="text-muted text-end text-nowrap">${formatSize(f.size)}</td>
+            <td class="text-muted text-end text-nowrap">${modified.toLocaleDateString()}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    fileList.innerHTML = html;
+
+    // Rebuild the file input's FileList with filtered files
+    rebuildFileInput(filtered);
+}
+
+function rebuildFileInput(filtered) {
+    // We need to create a new DataTransfer to set the file input's files
+    const dt = new DataTransfer();
+    filtered.forEach(f => dt.items.add(f));
+    fileInput.files = dt.files;
+}
+
+function clearFiles() {
+    selectedFiles = [];
+    fileInput.value = '';
+    document.getElementById('filePreview').style.display = 'none';
+    document.getElementById('submitBtn').disabled = true;
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Show uploading state on submit
+document.getElementById('uploadForm').addEventListener('submit', function() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Uploading...';
+});
+</script>
+{% endblock %}

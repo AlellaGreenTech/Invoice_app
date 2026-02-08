@@ -110,6 +110,11 @@
                         <a href="{{ url_for('exports.export_csv', batch_id=batch.id) }}" class="btn btn-success">
                             <i class="bi bi-file-earmark-spreadsheet"></i> Download CSV
                         </a>
+                        {% if batch.upload_type != 'local' %}
+                        <a href="{{ url_for('exports.export_zip', batch_id=batch.id) }}" class="btn btn-outline-success">
+                            <i class="bi bi-file-earmark-zip"></i> Download ZIP
+                        </a>
+                        {% endif %}
                         <button class="btn btn-primary" onclick="exportToSheets()">
                             <i class="bi bi-google"></i> Export to Google Sheets
                         </button>

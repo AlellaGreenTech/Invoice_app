@@ -1,11 +1,12 @@
 """Export routes."""
+import io
+import zipfile
 from flask import jsonify, send_file, request
 from flask_login import login_required, current_user
 from app.exports import exports_bp
 from app.models import Batch, Invoice
 from app.exports.csv_exporter import CSVExporter
 from app.exports.sheets_uploader import SheetsUploader
-import io
 
 
 @exports_bp.route('/csv/<int:batch_id>')
@@ -132,3 +133,55 @@ def export_summary_sheets(batch_id):
 
     except Exception as e:
         return jsonify({'error': f'Failed to export summary: {str(e)}'}), 500
+
+
+@exports_bp.route('/zip/<int:batch_id>')
+@login_required
+def export_zip(batch_id):
+    """Export batch PDFs as ZIP organized by category (Drive batches only)."""
+    batch = Batch.query.get_or_404(batch_id)
+
+    if batch.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if batch.upload_type == 'local':
+        return jsonify({
+            'error': 'ZIP export is not available for locally uploaded batches. '
+                     'Original PDF files are not retained after processing.'
+        }), 400
+
+    invoices = Invoice.query.filter_by(batch_id=batch_id).filter(
+        Invoice.drive_file_id.isnot(None)
+    ).order_by(Invoice.category, Invoice.filename).all()
+
+    if not invoices:
+        return jsonify({'error': 'No invoices with PDF files found in this batch'}), 404
+
+    try:
+        from app.invoices.drive_handler import DriveHandler
+
+        drive_handler = DriveHandler(current_user)
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for inv in invoices:
+                category_folder = (inv.category or 'Uncategorized').replace('/', '-')
+                try:
+                    pdf_content = drive_handler.download_file_to_memory(inv.drive_file_id)
+                    pdf_bytes = pdf_content.read()
+                    zf.writestr(f'{category_folder}/{inv.filename}', pdf_bytes)
+                except Exception:
+                    continue
+
+        zip_buffer.seek(0)
+        filename = f'batch_{batch_id}_invoices.zip'
+
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to create ZIP: {str(e)}'}), 500

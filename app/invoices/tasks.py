@@ -1,4 +1,5 @@
 """Celery tasks for background invoice processing."""
+import base64
 import os
 from datetime import datetime
 from celery import shared_task
@@ -9,6 +10,81 @@ from app.invoices.drive_handler import DriveHandler
 from app.invoices.pdf_parser import PDFParser
 from app.invoices.categorizer import InvoiceCategorizer
 from app.utils.currency import CurrencyConverter
+
+
+def _process_single_pdf(batch_id, filename, pdf_bytes, categorizer, pdf_parser, base_currency, drive_file_id=None):
+    """
+    Process a single PDF and create an Invoice record.
+
+    Args:
+        batch_id: ID of the batch
+        filename: Name of the PDF file
+        pdf_bytes: Raw PDF bytes (or BytesIO)
+        categorizer: InvoiceCategorizer instance
+        pdf_parser: PDFParser instance
+        base_currency: User's base currency
+        drive_file_id: Google Drive file ID (None for local uploads)
+
+    Returns:
+        dict with 'parsed_data' on success
+
+    Raises:
+        Exception on failure
+    """
+    parsed_data = pdf_parser.parse_invoice(pdf_bytes)
+
+    if not parsed_data['success']:
+        raise ValueError(parsed_data['error'])
+
+    categorization = categorizer.categorize_invoice(parsed_data)
+
+    converted_amount = None
+    if parsed_data['total_amount'] and parsed_data['currency']:
+        converted_amount = CurrencyConverter.convert(
+            parsed_data['total_amount'],
+            parsed_data['currency'],
+            base_currency
+        )
+
+    invoice = Invoice(
+        batch_id=batch_id,
+        drive_file_id=drive_file_id,
+        filename=filename,
+        vendor_name=parsed_data['vendor_name'],
+        invoice_number=parsed_data['invoice_number'],
+        invoice_date=parsed_data['invoice_date'],
+        total_amount=parsed_data['total_amount'],
+        currency=parsed_data['currency'],
+        currency_confidence=parsed_data.get('currency_confidence', 0.0),
+        converted_amount=converted_amount,
+        category=categorization['category'],
+        category_confidence=categorization['confidence'],
+        raw_text=parsed_data['raw_text'],
+        extraction_method=parsed_data['extraction_method'],
+        status='categorized'
+    )
+
+    db.session.add(invoice)
+    return {'parsed_data': parsed_data}
+
+
+def _finalize_batch(batch, batch_id, processed_count, failed_count, total_amount, date_range_start, date_range_end):
+    """Finalize batch with results."""
+    batch.status = 'completed'
+    batch.processed_invoices = processed_count
+    batch.failed_invoices = failed_count
+    batch.total_amount = total_amount
+    batch.date_range_start = date_range_start
+    batch.date_range_end = date_range_end
+    batch.completed_at = datetime.utcnow()
+
+    # Determine currency (use most common)
+    invoices = Invoice.query.filter_by(batch_id=batch_id).all()
+    currencies = [inv.currency for inv in invoices if inv.currency]
+    if currencies:
+        batch.currency = max(set(currencies), key=currencies.count)
+
+    db.session.commit()
 
 
 @shared_task(bind=True)
@@ -28,7 +104,6 @@ def process_invoice_batch(self, batch_id, user_id):
 
     with app.app_context():
         try:
-            # Get batch and user
             batch = Batch.query.get(batch_id)
             if not batch:
                 raise ValueError(f'Batch {batch_id} not found')
@@ -38,27 +113,22 @@ def process_invoice_batch(self, batch_id, user_id):
             if not user:
                 raise ValueError(f'User {user_id} not found')
 
-            # Get user's base currency setting
             user_settings = UserSettings.query.filter_by(user_id=user_id).first()
             base_currency = user_settings.base_currency if user_settings else 'EUR'
 
-            # Update batch status
             batch.status = 'processing'
             db.session.commit()
 
-            # Initialize handlers
             drive_handler = DriveHandler(user)
             pdf_parser = PDFParser()
             categorizer = InvoiceCategorizer()
 
-            # Get list of files from Drive
             app.logger.info(f'Processing batch {batch_id}: {batch.drive_url}')
             files = drive_handler.process_drive_url(batch.drive_url)
 
             batch.total_invoices = len(files)
             db.session.commit()
 
-            # Process each file
             processed_count = 0
             failed_count = 0
             total_amount = 0
@@ -67,7 +137,6 @@ def process_invoice_batch(self, batch_id, user_id):
 
             for i, file_info in enumerate(files):
                 try:
-                    # Update progress
                     self.update_state(
                         state='PROGRESS',
                         meta={
@@ -77,61 +146,26 @@ def process_invoice_batch(self, batch_id, user_id):
                         }
                     )
 
-                    # Download file to memory
                     file_content = drive_handler.download_file_to_memory(file_info['id'])
 
-                    # Parse PDF
-                    parsed_data = pdf_parser.parse_invoice(file_content)
-
-                    if not parsed_data['success']:
-                        raise ValueError(parsed_data['error'])
-
-                    # Categorize invoice
-                    categorization = categorizer.categorize_invoice(parsed_data)
-
-                    # Calculate converted amount
-                    converted_amount = None
-                    if parsed_data['total_amount'] and parsed_data['currency']:
-                        converted_amount = CurrencyConverter.convert(
-                            parsed_data['total_amount'],
-                            parsed_data['currency'],
-                            base_currency
-                        )
-
-                    # Create invoice record
-                    invoice = Invoice(
-                        batch_id=batch_id,
-                        drive_file_id=file_info['id'],
-                        filename=file_info['name'],
-                        vendor_name=parsed_data['vendor_name'],
-                        invoice_number=parsed_data['invoice_number'],
-                        invoice_date=parsed_data['invoice_date'],
-                        total_amount=parsed_data['total_amount'],
-                        currency=parsed_data['currency'],
-                        currency_confidence=parsed_data.get('currency_confidence', 0.0),
-                        converted_amount=converted_amount,
-                        category=categorization['category'],
-                        category_confidence=categorization['confidence'],
-                        raw_text=parsed_data['raw_text'],
-                        extraction_method=parsed_data['extraction_method'],
-                        status='categorized'
+                    result = _process_single_pdf(
+                        batch_id, file_info['name'], file_content,
+                        categorizer, pdf_parser, base_currency,
+                        drive_file_id=file_info['id']
                     )
+                    parsed_data = result['parsed_data']
 
-                    db.session.add(invoice)
                     processed_count += 1
 
-                    # Update totals
                     if parsed_data['total_amount']:
                         total_amount += float(parsed_data['total_amount'])
 
-                    # Update date range
                     if parsed_data['invoice_date']:
                         if not date_range_start or parsed_data['invoice_date'] < date_range_start:
                             date_range_start = parsed_data['invoice_date']
                         if not date_range_end or parsed_data['invoice_date'] > date_range_end:
                             date_range_end = parsed_data['invoice_date']
 
-                    # Update batch progress
                     batch.processed_invoices = processed_count
                     batch.failed_invoices = failed_count
                     db.session.commit()
@@ -141,7 +175,6 @@ def process_invoice_batch(self, batch_id, user_id):
                 except Exception as e:
                     app.logger.error(f'Failed to process {file_info["name"]}: {str(e)}')
 
-                    # Create failed invoice record
                     invoice = Invoice(
                         batch_id=batch_id,
                         drive_file_id=file_info['id'],
@@ -155,22 +188,7 @@ def process_invoice_batch(self, batch_id, user_id):
                     batch.failed_invoices = failed_count
                     db.session.commit()
 
-            # Update batch with final results
-            batch.status = 'completed'
-            batch.processed_invoices = processed_count
-            batch.failed_invoices = failed_count
-            batch.total_amount = total_amount
-            batch.date_range_start = date_range_start
-            batch.date_range_end = date_range_end
-            batch.completed_at = datetime.utcnow()
-
-            # Determine currency (use most common)
-            invoices = Invoice.query.filter_by(batch_id=batch_id).all()
-            currencies = [inv.currency for inv in invoices if inv.currency]
-            if currencies:
-                batch.currency = max(set(currencies), key=currencies.count)
-
-            db.session.commit()
+            _finalize_batch(batch, batch_id, processed_count, failed_count, total_amount, date_range_start, date_range_end)
 
             app.logger.info(
                 f'Batch {batch_id} completed: {processed_count} processed, {failed_count} failed'
@@ -186,7 +204,136 @@ def process_invoice_batch(self, batch_id, user_id):
         except Exception as e:
             app.logger.error(f'Batch processing failed: {str(e)}')
 
-            # Update batch status
+            batch = Batch.query.get(batch_id)
+            if batch:
+                batch.status = 'failed'
+                batch.error_message = str(e)
+                db.session.commit()
+
+            raise
+
+
+@shared_task(bind=True)
+def process_local_batch(self, batch_id, user_id, redis_file_keys):
+    """
+    Process a batch of locally uploaded PDFs stored in Redis.
+
+    Args:
+        batch_id: ID of the batch to process
+        user_id: ID of the user who owns the batch
+        redis_file_keys: List of dicts with 'key' (Redis key) and 'filename'
+
+    Returns:
+        dict: Processing results
+    """
+    import redis as redis_lib
+    from app import create_app
+    app = create_app()
+
+    with app.app_context():
+        try:
+            batch = Batch.query.get(batch_id)
+            if not batch:
+                raise ValueError(f'Batch {batch_id} not found')
+
+            user_settings = UserSettings.query.filter_by(user_id=user_id).first()
+            base_currency = user_settings.base_currency if user_settings else 'EUR'
+
+            batch.status = 'processing'
+            db.session.commit()
+
+            pdf_parser = PDFParser()
+            categorizer = InvoiceCategorizer()
+
+            redis_url = app.config.get('REDIS_URL', 'redis://localhost:6379/0')
+            r = redis_lib.from_url(redis_url)
+
+            processed_count = 0
+            failed_count = 0
+            total_amount = 0
+            date_range_start = None
+            date_range_end = None
+            total_files = len(redis_file_keys)
+
+            for i, file_info in enumerate(redis_file_keys):
+                filename = file_info['filename']
+                redis_key = file_info['key']
+
+                try:
+                    self.update_state(
+                        state='PROGRESS',
+                        meta={
+                            'current': i + 1,
+                            'total': total_files,
+                            'status': f'Processing {filename}'
+                        }
+                    )
+
+                    # Read PDF from Redis and delete the key
+                    pdf_b64 = r.get(redis_key)
+                    r.delete(redis_key)
+
+                    if not pdf_b64:
+                        raise ValueError(f'PDF data not found in Redis (key may have expired)')
+
+                    pdf_bytes = base64.b64decode(pdf_b64)
+
+                    result = _process_single_pdf(
+                        batch_id, filename, pdf_bytes,
+                        categorizer, pdf_parser, base_currency,
+                        drive_file_id=None
+                    )
+                    parsed_data = result['parsed_data']
+
+                    processed_count += 1
+
+                    if parsed_data['total_amount']:
+                        total_amount += float(parsed_data['total_amount'])
+
+                    if parsed_data['invoice_date']:
+                        if not date_range_start or parsed_data['invoice_date'] < date_range_start:
+                            date_range_start = parsed_data['invoice_date']
+                        if not date_range_end or parsed_data['invoice_date'] > date_range_end:
+                            date_range_end = parsed_data['invoice_date']
+
+                    batch.processed_invoices = processed_count
+                    batch.failed_invoices = failed_count
+                    db.session.commit()
+
+                    app.logger.info(f'Successfully processed invoice: {filename}')
+
+                except Exception as e:
+                    app.logger.error(f'Failed to process {filename}: {str(e)}')
+
+                    invoice = Invoice(
+                        batch_id=batch_id,
+                        drive_file_id=None,
+                        filename=filename,
+                        status='failed',
+                        error_message=str(e)
+                    )
+                    db.session.add(invoice)
+                    failed_count += 1
+
+                    batch.failed_invoices = failed_count
+                    db.session.commit()
+
+            _finalize_batch(batch, batch_id, processed_count, failed_count, total_amount, date_range_start, date_range_end)
+
+            app.logger.info(
+                f'Local batch {batch_id} completed: {processed_count} processed, {failed_count} failed'
+            )
+
+            return {
+                'status': 'completed',
+                'processed': processed_count,
+                'failed': failed_count,
+                'total_amount': total_amount
+            }
+
+        except Exception as e:
+            app.logger.error(f'Local batch processing failed: {str(e)}')
+
             batch = Batch.query.get(batch_id)
             if batch:
                 batch.status = 'failed'

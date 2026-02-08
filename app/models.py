@@ -33,7 +33,8 @@ class Batch(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    drive_url = db.Column(db.String(1000), nullable=False)
+    drive_url = db.Column(db.String(1000), nullable=True)
+    upload_type = db.Column(db.String(20), default='drive')  # 'local' or 'drive'
     status = db.Column(db.String(50), default='pending')  # pending, processing, completed, failed
     total_invoices = db.Column(db.Integer, default=0)
     processed_invoices = db.Column(db.Integer, default=0)

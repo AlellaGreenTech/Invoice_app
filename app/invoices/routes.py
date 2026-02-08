@@ -1,16 +1,25 @@
 """Updated invoice routes with background processing."""
-from flask import render_template, request, jsonify, redirect, url_for, flash, Response, session
+import base64
+import uuid
+from flask import render_template, request, jsonify, redirect, url_for, flash, Response, session, current_app
 from flask_login import login_required, current_user
 from app.invoices import invoices_bp
 from app.models import Batch, Invoice, UserSettings
 from app.extensions import db
-from app.invoices.tasks import process_invoice_batch
+from app.invoices.tasks import process_invoice_batch, process_local_batch
 from app.invoices.drive_handler import DriveHandler
 
 
 @invoices_bp.route('/upload')
 @login_required
 def upload():
+    """Show local file upload form."""
+    return render_template('invoices/upload_local.html')
+
+
+@invoices_bp.route('/drive-upload')
+@login_required
+def drive_upload():
     """Show upload form for Google Drive URL."""
     if not session.get('drive_authorized'):
         return render_template('connect_drive.html')
@@ -25,13 +34,14 @@ def process():
 
     if not drive_url:
         flash('Please provide a Google Drive URL', 'error')
-        return redirect(url_for('invoices.upload'))
+        return redirect(url_for('invoices.drive_upload'))
 
     try:
         # Create batch record
         batch = Batch(
             user_id=current_user.id,
             drive_url=drive_url,
+            upload_type='drive',
             status='pending'
         )
         db.session.add(batch)
@@ -45,8 +55,77 @@ def process():
 
     except Exception as e:
         import traceback
-        from flask import current_app
         current_app.logger.error(f'Failed to start processing: {traceback.format_exc()}')
+        flash(f'Failed to start processing: {str(e)}', 'error')
+        return redirect(url_for('invoices.drive_upload'))
+
+
+@invoices_bp.route('/process-local', methods=['POST'])
+@login_required
+def process_local():
+    """Process locally uploaded PDF files."""
+    import redis
+    files = request.files.getlist('pdfs')
+
+    if not files or all(f.filename == '' for f in files):
+        flash('Please select PDF files to upload', 'error')
+        return redirect(url_for('invoices.upload'))
+
+    # Filter to PDF files only
+    pdf_files = [f for f in files if f.filename.lower().endswith('.pdf')]
+
+    if not pdf_files:
+        flash('No PDF files found in the selected files', 'error')
+        return redirect(url_for('invoices.upload'))
+
+    # Check total size (100MB limit)
+    MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+    total_size = 0
+    for f in pdf_files:
+        f.seek(0, 2)  # Seek to end
+        total_size += f.tell()
+        f.seek(0)  # Reset
+
+    if total_size > MAX_UPLOAD_SIZE:
+        flash('Total file size exceeds 100MB limit', 'error')
+        return redirect(url_for('invoices.upload'))
+
+    try:
+        # Store files in Redis for the Celery worker to read
+        redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379/0')
+        r = redis.from_url(redis_url)
+        redis_file_keys = []
+
+        for f in pdf_files:
+            file_bytes = f.read()
+            redis_key = f'upload:{uuid.uuid4().hex}'
+            # Store as base64 with 1-hour TTL
+            r.setex(redis_key, 3600, base64.b64encode(file_bytes))
+            redis_file_keys.append({
+                'key': redis_key,
+                'filename': f.filename
+            })
+
+        # Create batch record
+        batch = Batch(
+            user_id=current_user.id,
+            drive_url=None,
+            upload_type='local',
+            status='pending',
+            total_invoices=len(pdf_files)
+        )
+        db.session.add(batch)
+        db.session.commit()
+
+        # Start background processing
+        process_local_batch.delay(batch.id, current_user.id, redis_file_keys)
+
+        flash('Processing started! You will be redirected to the progress page.', 'success')
+        return redirect(url_for('invoices.processing', batch_id=batch.id))
+
+    except Exception as e:
+        import traceback
+        current_app.logger.error(f'Failed to start local processing: {traceback.format_exc()}')
         flash(f'Failed to start processing: {str(e)}', 'error')
         return redirect(url_for('invoices.upload'))
 
@@ -525,7 +604,7 @@ def view_pdf(invoice_id):
         return jsonify({'error': 'Unauthorized'}), 403
 
     if not invoice.drive_file_id:
-        return jsonify({'error': 'No PDF file associated with this invoice'}), 404
+        return jsonify({'error': 'PDF not available for locally uploaded invoices'}), 404
 
     try:
         # Fetch PDF from Google Drive
