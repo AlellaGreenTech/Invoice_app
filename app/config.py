@@ -17,10 +17,10 @@ class Config:
     broker_url = REDIS_URL
     result_backend = REDIS_URL
 
-    # Google OAuth
-    GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
-    GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
-    GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'http://localhost:5000/auth/callback')
+    # Google OAuth (strip whitespace — Render env vars sometimes include trailing newlines)
+    GOOGLE_CLIENT_ID = (os.getenv('GOOGLE_CLIENT_ID') or '').strip()
+    GOOGLE_CLIENT_SECRET = (os.getenv('GOOGLE_CLIENT_SECRET') or '').strip()
+    GOOGLE_REDIRECT_URI = (os.getenv('GOOGLE_REDIRECT_URI') or 'http://localhost:5000/auth/callback').strip()
     GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
     # Google Drive API

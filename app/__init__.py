@@ -10,7 +10,7 @@ from app.extensions import db, migrate, celery
 def create_app(config_name=None):
     """Create and configure the Flask application."""
     if config_name is None:
-        config_name = os.getenv('FLASK_ENV', 'development')
+        config_name = os.getenv('FLASK_ENV', 'development').strip()
 
     app = Flask(__name__)
     app.config.from_object(config[config_name])
