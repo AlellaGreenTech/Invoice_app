@@ -29,7 +29,7 @@ services:
 
   web:
     build: .
-    command: gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 --preload "app:create_app()"
+    command: gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 --preload "app:create_app('development')"
     volumes:
       - .:/app
     ports:

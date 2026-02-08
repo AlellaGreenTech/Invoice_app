@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: invoice-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 --preload "app:create_app()"
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: invoice-app-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: invoice-app-redis
+          type: redis
+          property: connectionString
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+    healthCheckPath: /
+
+databases:
+  - name: invoice-app-db
+    plan: free
+    databaseName: invoice_app
+    user: invoice_user

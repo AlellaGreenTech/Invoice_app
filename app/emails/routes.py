@@ -3,8 +3,18 @@ import io
 import zipfile
 from flask import render_template, request, jsonify, redirect, url_for, flash, Response, session, current_app
 from flask_login import login_required, current_user
+from googleapiclient.errors import HttpError
 from app.emails import emails_bp
 from app.emails.gmail_handler import GmailHandler
+
+
+def _check_gmail_access():
+    """Check if user has Gmail access. Returns redirect response if not, None if OK."""
+    # If we already know gmail is authorized this session, skip check
+    if session.get('gmail_authorized'):
+        return None
+    # Otherwise, we'll find out when the API call fails
+    return None
 
 
 @emails_bp.route('/search', methods=['GET', 'POST'])
@@ -81,11 +91,21 @@ def results():
             format_size=GmailHandler.format_size
         )
 
+    except HttpError as e:
+        if e.resp.status == 403 and 'insufficientPermissions' in str(e):
+            flash('Gmail access required. Please authorize Gmail to use this feature.', 'warning')
+            return redirect(url_for('auth.authorize_gmail'))
+        current_app.logger.error(f'Gmail API error: {e}')
+        flash('Failed to search Gmail. Please try again.', 'error')
+        return redirect(url_for('emails.search'))
     except ValueError as e:
         flash(str(e), 'error')
         return redirect(url_for('emails.search'))
     except Exception as e:
-        from flask import current_app
+        error_str = str(e)
+        if 'insufficient' in error_str.lower() or 'scope' in error_str.lower():
+            flash('Gmail access required. Please authorize Gmail to use this feature.', 'warning')
+            return redirect(url_for('auth.authorize_gmail'))
         current_app.logger.error(f'Gmail search error: {e}')
         flash('Failed to search Gmail. Please try again.', 'error')
         return redirect(url_for('emails.search'))

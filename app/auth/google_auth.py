@@ -8,6 +8,21 @@ from googleapiclient.discovery import build
 from flask import current_app, session, url_for
 
 
+# Login scopes: openid + profile + core app features (sensitive, NOT restricted)
+LOGIN_SCOPES = [
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/spreadsheets',
+]
+
+# Gmail scope is RESTRICTED and requires separate authorization
+GMAIL_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+]
+
+
 class GoogleAuth:
     """Helper class for Google OAuth authentication."""
 
@@ -23,25 +38,16 @@ class GoogleAuth:
             }
         }
 
-        self.scopes = [
-            'openid',
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile',
-            'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/gmail.readonly'
-        ]
-
     def get_authorization_url(self):
         """
-        Generate authorization URL for OAuth flow.
+        Generate authorization URL for login (core scopes only).
 
         Returns:
             tuple: (authorization_url, state)
         """
         flow = Flow.from_client_config(
             self.client_config,
-            scopes=self.scopes,
+            scopes=LOGIN_SCOPES,
             redirect_uri=current_app.config['GOOGLE_REDIRECT_URI']
         )
 
@@ -52,20 +58,46 @@ class GoogleAuth:
 
         return authorization_url, state
 
-    def fetch_token(self, authorization_response, state):
+    def get_gmail_authorization_url(self):
+        """
+        Generate authorization URL for Gmail access (incremental).
+        Uses include_granted_scopes to preserve existing scopes.
+
+        Returns:
+            tuple: (authorization_url, state)
+        """
+        flow = Flow.from_client_config(
+            self.client_config,
+            scopes=GMAIL_SCOPES,
+            redirect_uri=current_app.config['GOOGLE_REDIRECT_URI']
+        )
+
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            prompt='consent',
+            include_granted_scopes='true'
+        )
+
+        return authorization_url, state
+
+    def fetch_token(self, authorization_response, state, scopes=None):
         """
         Exchange authorization code for access token.
 
         Args:
             authorization_response: Full callback URL with code
             state: State parameter from session
+            scopes: Scopes to use for this flow (defaults to LOGIN_SCOPES)
 
         Returns:
             dict: Token information including access_token, refresh_token, etc.
         """
+        if scopes is None:
+            scopes = LOGIN_SCOPES
+
         flow = Flow.from_client_config(
             self.client_config,
-            scopes=self.scopes,
+            scopes=scopes,
             state=state,
             redirect_uri=current_app.config['GOOGLE_REDIRECT_URI']
         )
@@ -78,7 +110,7 @@ class GoogleAuth:
             'access_token': credentials.token,
             'refresh_token': credentials.refresh_token,
             'token_expiry': credentials.expiry,
-            'scopes': credentials.scopes
+            'scopes': list(credentials.scopes) if credentials.scopes else []
         }
 
     def get_user_info(self, access_token):

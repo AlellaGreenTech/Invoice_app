@@ -1,14 +1,23 @@
 """Flask application factory."""
+import os
 from flask import Flask
 from flask_login import LoginManager
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.config import config
 from app.extensions import db, migrate, celery
 
 
-def create_app(config_name='development'):
+def create_app(config_name=None):
     """Create and configure the Flask application."""
+    if config_name is None:
+        config_name = os.getenv('FLASK_ENV', 'development')
+
     app = Flask(__name__)
     app.config.from_object(config[config_name])
+
+    # Trust reverse proxy headers (Render, Heroku, etc.)
+    if config_name == 'production':
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     # Initialize extensions
     db.init_app(app)
