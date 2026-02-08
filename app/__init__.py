@@ -62,4 +62,8 @@ def create_app(config_name=None):
     from app import cli
     cli.register_commands(app)
 
+    # Ensure database tables exist
+    with app.app_context():
+        db.create_all()
+
     return app
