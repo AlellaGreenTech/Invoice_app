@@ -90,8 +90,11 @@ def callback():
             return _handle_login_callback(google_auth, token_info)
 
     except Exception as e:
-        current_app.logger.error(f'OAuth callback error: {str(e)}')
-        flash('Authentication failed. Please try again.', 'error')
+        current_app.logger.error(f'OAuth callback error: {type(e).__name__}: {str(e)}')
+        current_app.logger.error(f'OAuth callback debug: request.url={request.url}, '
+                                 f'authorization_response={authorization_response}, '
+                                 f'flow={oauth_flow}')
+        flash(f'Authentication failed: {type(e).__name__}: {str(e)}', 'error')
         return redirect(url_for('main.index'))
 
 

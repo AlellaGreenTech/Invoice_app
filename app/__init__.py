@@ -16,8 +16,8 @@ def create_app(config_name=None):
     app.config.from_object(config[config_name])
 
     # Trust reverse proxy headers (Render, Heroku, etc.)
-    if config_name == 'production':
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    # Always apply — harmless in dev (headers simply won't be present)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     # Initialize extensions
     db.init_app(app)
