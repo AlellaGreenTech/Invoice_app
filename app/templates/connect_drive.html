@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Connect Google Drive - Invoice Processor{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow-sm mt-5">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <i class="bi bi-cloud text-primary" style="font-size: 4rem;"></i>
+                    </div>
+                    <h3 class="mb-3">Connect Google Drive</h3>
+                    <p class="text-muted mb-4">
+                        To process invoices, you need to grant read-only access to your
+                        Google Drive and Google Sheets. We only read files you explicitly
+                        choose &mdash; we never modify or delete anything.
+                    </p>
+                    <a href="{{ url_for('auth.authorize_drive') }}" class="btn btn-primary btn-lg px-5">
+                        <i class="bi bi-google"></i> Connect Google Drive
+                    </a>
+                    <div class="mt-4">
+                        <a href="{{ url_for('main.dashboard') }}" class="text-muted">
+                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

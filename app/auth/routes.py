@@ -2,7 +2,7 @@
 from flask import redirect, url_for, session, request, flash, current_app
 from flask_login import login_user, logout_user, current_user
 from app.auth import auth_bp
-from app.auth.google_auth import GoogleAuth, LOGIN_SCOPES, GMAIL_SCOPES
+from app.auth.google_auth import GoogleAuth, LOGIN_SCOPES, DRIVE_SCOPES, GMAIL_SCOPES
 from app.models import User
 from app.extensions import db
 
@@ -31,6 +31,26 @@ def login():
         current_app.logger.error(f'OAuth login error: {str(e)}')
         flash('Failed to initiate login. Please try again.', 'error')
         return redirect(url_for('main.index'))
+
+
+@auth_bp.route('/authorize-drive')
+def authorize_drive():
+    """Initiate incremental OAuth for Drive/Sheets access."""
+    if not current_user.is_authenticated:
+        return redirect(url_for('auth.login'))
+
+    try:
+        google_auth = GoogleAuth()
+        authorization_url, state = google_auth.get_drive_authorization_url()
+
+        session['oauth_state'] = state
+        session['oauth_flow'] = 'drive'
+
+        return redirect(authorization_url)
+    except Exception as e:
+        current_app.logger.error(f'Drive OAuth error: {str(e)}')
+        flash('Failed to authorize Drive access. Please try again.', 'error')
+        return redirect(url_for('main.dashboard'))
 
 
 @auth_bp.route('/authorize-gmail')
@@ -73,9 +93,14 @@ def callback():
     try:
         google_auth = GoogleAuth()
 
-        # For gmail flow, Google returns ALL scopes (old + new) due to
+        # For incremental flows, Google returns ALL scopes (old + new) due to
         # include_granted_scopes, so we must pass the combined set
-        scopes = LOGIN_SCOPES + GMAIL_SCOPES if oauth_flow == 'gmail' else LOGIN_SCOPES
+        if oauth_flow == 'gmail':
+            scopes = LOGIN_SCOPES + DRIVE_SCOPES + GMAIL_SCOPES
+        elif oauth_flow == 'drive':
+            scopes = LOGIN_SCOPES + DRIVE_SCOPES
+        else:
+            scopes = LOGIN_SCOPES
 
         # Fix request URL scheme for reverse proxy (Render, etc.)
         authorization_response = request.url
@@ -87,6 +112,8 @@ def callback():
 
         if oauth_flow == 'gmail':
             return _handle_gmail_callback(google_auth, token_info)
+        elif oauth_flow == 'drive':
+            return _handle_drive_callback(google_auth, token_info)
         else:
             return _handle_login_callback(google_auth, token_info)
 
@@ -139,6 +166,23 @@ def _handle_login_callback(google_auth, token_info):
     session.pop('oauth_flow', None)
 
     flash(f'Welcome back, {user.name}!', 'success')
+    return redirect(url_for('main.dashboard'))
+
+
+def _handle_drive_callback(google_auth, token_info):
+    """Handle the incremental Drive/Sheets authorization callback."""
+    current_user.access_token = token_info['access_token']
+    if token_info.get('refresh_token'):
+        current_user.refresh_token = token_info['refresh_token']
+    current_user.token_expiry = token_info['token_expiry']
+
+    db.session.commit()
+
+    session['drive_authorized'] = True
+    session.pop('oauth_state', None)
+    session.pop('oauth_flow', None)
+
+    flash('Google Drive access authorized successfully!', 'success')
     return redirect(url_for('main.dashboard'))
 
 

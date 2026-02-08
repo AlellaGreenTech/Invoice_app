@@ -1,5 +1,5 @@
 """Updated invoice routes with background processing."""
-from flask import render_template, request, jsonify, redirect, url_for, flash, Response
+from flask import render_template, request, jsonify, redirect, url_for, flash, Response, session
 from flask_login import login_required, current_user
 from app.invoices import invoices_bp
 from app.models import Batch, Invoice, UserSettings
@@ -12,6 +12,8 @@ from app.invoices.drive_handler import DriveHandler
 @login_required
 def upload():
     """Show upload form for Google Drive URL."""
+    if not session.get('drive_authorized'):
+        return render_template('connect_drive.html')
     return render_template('invoices/upload.html')
 
 

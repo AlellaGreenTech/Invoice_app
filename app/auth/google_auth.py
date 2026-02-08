@@ -8,16 +8,20 @@ from googleapiclient.discovery import build
 from flask import current_app, session, url_for
 
 
-# Login scopes: openid + profile + core app features (sensitive, NOT restricted)
+# Login scopes: ONLY non-sensitive (no verification needed, works for everyone)
 LOGIN_SCOPES = [
     'openid',
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
+]
+
+# Drive + Sheets scopes (sensitive) — authorized separately after login
+DRIVE_SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
     'https://www.googleapis.com/auth/spreadsheets',
 ]
 
-# Gmail scope is RESTRICTED and requires separate authorization
+# Gmail scope (restricted) — authorized separately when email feature is used
 GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
 ]
@@ -54,6 +58,28 @@ class GoogleAuth:
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             prompt='consent'
+        )
+
+        return authorization_url, state
+
+    def get_drive_authorization_url(self):
+        """
+        Generate authorization URL for Drive/Sheets access (incremental).
+        Uses include_granted_scopes to preserve existing scopes.
+
+        Returns:
+            tuple: (authorization_url, state)
+        """
+        flow = Flow.from_client_config(
+            self.client_config,
+            scopes=DRIVE_SCOPES,
+            redirect_uri=current_app.config['GOOGLE_REDIRECT_URI']
+        )
+
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            prompt='consent',
+            include_granted_scopes='true'
         )
 
         return authorization_url, state
