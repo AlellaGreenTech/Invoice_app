@@ -64,7 +64,19 @@ def create_app(config_name=None):
 
     # Run database migrations, then create any brand-new tables
     with app.app_context():
-        from flask_migrate import upgrade
+        from flask_migrate import upgrade, stamp
+        from sqlalchemy import inspect
+
+        inspector = inspect(db.engine)
+        tables_exist = inspector.has_table('users')
+        alembic_exists = inspector.has_table('alembic_version')
+
+        if tables_exist and not alembic_exists:
+            # DB was created by db.create_all() without Alembic — stamp to
+            # the last migration that matches the current schema so upgrade()
+            # only applies newer migrations.
+            stamp(revision='a1b2c3d4e5f6')
+
         upgrade()
         db.create_all()
 
