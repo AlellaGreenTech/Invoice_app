@@ -62,8 +62,10 @@ def create_app(config_name=None):
     from app import cli
     cli.register_commands(app)
 
-    # Ensure database tables exist
+    # Run database migrations, then create any brand-new tables
     with app.app_context():
+        from flask_migrate import upgrade
+        upgrade()
         db.create_all()
 
     return app
