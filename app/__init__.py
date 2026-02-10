@@ -62,22 +62,25 @@ def create_app(config_name=None):
     from app import cli
     cli.register_commands(app)
 
-    # Run database migrations, then create any brand-new tables
+    # Ensure database schema is up to date, then create any brand-new tables
     with app.app_context():
-        from flask_migrate import upgrade, stamp
-        from sqlalchemy import inspect
+        from sqlalchemy import text, inspect
 
         inspector = inspect(db.engine)
-        tables_exist = inspector.has_table('users')
-        alembic_exists = inspector.has_table('alembic_version')
 
-        if tables_exist and not alembic_exists:
-            # DB was created by db.create_all() without Alembic — stamp to
-            # the last migration that matches the current schema so upgrade()
-            # only applies newer migrations.
-            stamp(revision='a1b2c3d4e5f6')
+        # Direct SQL for schema changes — works reliably on Render where
+        # Alembic upgrade() during gunicorn --preload can fail the deploy.
+        if inspector.has_table('batches'):
+            columns = [c['name'] for c in inspector.get_columns('batches')]
+            if 'upload_type' not in columns:
+                db.session.execute(text(
+                    "ALTER TABLE batches ADD COLUMN upload_type VARCHAR(20) DEFAULT 'drive'"
+                ))
+                db.session.execute(text(
+                    "ALTER TABLE batches ALTER COLUMN drive_url DROP NOT NULL"
+                ))
+                db.session.commit()
 
-        upgrade()
         db.create_all()
 
     return app
