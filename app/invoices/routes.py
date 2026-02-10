@@ -1,10 +1,8 @@
 """Updated invoice routes with background processing."""
-import base64
-import uuid
 from flask import render_template, request, jsonify, redirect, url_for, flash, Response, session, current_app
 from flask_login import login_required, current_user
 from app.invoices import invoices_bp
-from app.models import Batch, Invoice, UserSettings
+from app.models import Batch, Invoice, UserSettings, TempUpload
 from app.extensions import db
 from app.invoices.tasks import process_invoice_batch, process_local_batch
 from app.invoices.drive_handler import DriveHandler
@@ -64,7 +62,6 @@ def process():
 @login_required
 def process_local():
     """Process locally uploaded PDF files."""
-    import redis
     files = request.files.getlist('pdfs')
 
     if not files or all(f.filename == '' for f in files):
@@ -91,22 +88,7 @@ def process_local():
         return redirect(url_for('invoices.upload'))
 
     try:
-        # Store files in Redis for the Celery worker to read
-        redis_url = current_app.config.get('REDIS_URL', 'redis://localhost:6379/0')
-        r = redis.from_url(redis_url)
-        redis_file_keys = []
-
-        for f in pdf_files:
-            file_bytes = f.read()
-            redis_key = f'upload:{uuid.uuid4().hex}'
-            # Store as base64 with 1-hour TTL
-            r.setex(redis_key, 3600, base64.b64encode(file_bytes))
-            redis_file_keys.append({
-                'key': redis_key,
-                'filename': f.filename
-            })
-
-        # Create batch record
+        # Create batch record first
         batch = Batch(
             user_id=current_user.id,
             drive_url=None,
@@ -115,15 +97,27 @@ def process_local():
             total_invoices=len(pdf_files)
         )
         db.session.add(batch)
+        db.session.flush()  # Get batch.id without committing
+
+        # Store files in PostgreSQL for the Celery worker to read
+        for f in pdf_files:
+            temp = TempUpload(
+                batch_id=batch.id,
+                filename=f.filename,
+                file_data=f.read()
+            )
+            db.session.add(temp)
+
         db.session.commit()
 
         # Start background processing
-        process_local_batch.delay(batch.id, current_user.id, redis_file_keys)
+        process_local_batch.delay(batch.id, current_user.id)
 
         flash('Processing started! You will be redirected to the progress page.', 'success')
         return redirect(url_for('invoices.processing', batch_id=batch.id))
 
     except Exception as e:
+        db.session.rollback()
         import traceback
         current_app.logger.error(f'Failed to start local processing: {traceback.format_exc()}')
         flash(f'Failed to start processing: {str(e)}', 'error')

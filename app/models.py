@@ -128,6 +128,17 @@ class Category(db.Model):
         return f'<Category {self.name}>'
 
 
+class TempUpload(db.Model):
+    """Temporary storage for locally uploaded PDFs (read by Celery, then deleted)."""
+    __tablename__ = 'temp_uploads'
+
+    id = db.Column(db.Integer, primary_key=True)
+    batch_id = db.Column(db.Integer, db.ForeignKey('batches.id'), nullable=False)
+    filename = db.Column(db.String(500), nullable=False)
+    file_data = db.Column(db.LargeBinary, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class UserSettings(db.Model):
     """User settings model for user preferences."""
     __tablename__ = 'user_settings'

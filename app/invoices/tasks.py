@@ -1,11 +1,10 @@
 """Celery tasks for background invoice processing."""
-import base64
 import os
 from datetime import datetime
 from celery import shared_task
 from flask import current_app
 from app.extensions import db
-from app.models import Batch, Invoice, UserSettings
+from app.models import Batch, Invoice, UserSettings, TempUpload
 from app.invoices.drive_handler import DriveHandler
 from app.invoices.pdf_parser import PDFParser
 from app.invoices.categorizer import InvoiceCategorizer
@@ -214,19 +213,17 @@ def process_invoice_batch(self, batch_id, user_id):
 
 
 @shared_task(bind=True)
-def process_local_batch(self, batch_id, user_id, redis_file_keys):
+def process_local_batch(self, batch_id, user_id):
     """
-    Process a batch of locally uploaded PDFs stored in Redis.
+    Process a batch of locally uploaded PDFs stored in the temp_uploads table.
 
     Args:
         batch_id: ID of the batch to process
         user_id: ID of the user who owns the batch
-        redis_file_keys: List of dicts with 'key' (Redis key) and 'filename'
 
     Returns:
         dict: Processing results
     """
-    import redis as redis_lib
     from app import create_app
     app = create_app()
 
@@ -245,45 +242,38 @@ def process_local_batch(self, batch_id, user_id, redis_file_keys):
             pdf_parser = PDFParser()
             categorizer = InvoiceCategorizer()
 
-            redis_url = app.config.get('REDIS_URL', 'redis://localhost:6379/0')
-            r = redis_lib.from_url(redis_url)
+            # Read uploaded files from the database
+            temp_files = TempUpload.query.filter_by(batch_id=batch_id).all()
 
             processed_count = 0
             failed_count = 0
             total_amount = 0
             date_range_start = None
             date_range_end = None
-            total_files = len(redis_file_keys)
+            total_files = len(temp_files)
 
-            for i, file_info in enumerate(redis_file_keys):
-                filename = file_info['filename']
-                redis_key = file_info['key']
-
+            for i, temp in enumerate(temp_files):
                 try:
                     self.update_state(
                         state='PROGRESS',
                         meta={
                             'current': i + 1,
                             'total': total_files,
-                            'status': f'Processing {filename}'
+                            'status': f'Processing {temp.filename}'
                         }
                     )
 
-                    # Read PDF from Redis and delete the key
-                    pdf_b64 = r.get(redis_key)
-                    r.delete(redis_key)
-
-                    if not pdf_b64:
-                        raise ValueError(f'PDF data not found in Redis (key may have expired)')
-
-                    pdf_bytes = base64.b64decode(pdf_b64)
+                    pdf_bytes = bytes(temp.file_data)
 
                     result = _process_single_pdf(
-                        batch_id, filename, pdf_bytes,
+                        batch_id, temp.filename, pdf_bytes,
                         categorizer, pdf_parser, base_currency,
                         drive_file_id=None
                     )
                     parsed_data = result['parsed_data']
+
+                    # Delete temp file after successful processing
+                    db.session.delete(temp)
 
                     processed_count += 1
 
@@ -300,19 +290,21 @@ def process_local_batch(self, batch_id, user_id, redis_file_keys):
                     batch.failed_invoices = failed_count
                     db.session.commit()
 
-                    app.logger.info(f'Successfully processed invoice: {filename}')
+                    app.logger.info(f'Successfully processed invoice: {temp.filename}')
 
                 except Exception as e:
-                    app.logger.error(f'Failed to process {filename}: {str(e)}')
+                    app.logger.error(f'Failed to process {temp.filename}: {str(e)}')
 
                     invoice = Invoice(
                         batch_id=batch_id,
                         drive_file_id=None,
-                        filename=filename,
+                        filename=temp.filename,
                         status='failed',
                         error_message=str(e)
                     )
                     db.session.add(invoice)
+                    # Still delete the temp file
+                    db.session.delete(temp)
                     failed_count += 1
 
                     batch.failed_invoices = failed_count
@@ -333,6 +325,9 @@ def process_local_batch(self, batch_id, user_id, redis_file_keys):
 
         except Exception as e:
             app.logger.error(f'Local batch processing failed: {str(e)}')
+
+            # Clean up temp files on failure
+            TempUpload.query.filter_by(batch_id=batch_id).delete()
 
             batch = Batch.query.get(batch_id)
             if batch:
