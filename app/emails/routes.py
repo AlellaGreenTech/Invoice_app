@@ -54,7 +54,7 @@ def search():
 @emails_bp.route('/results')
 @login_required
 def results():
-    """Display search results with attachment summary."""
+    """Display search results with attachment summary (all results loaded at once)."""
     query = session.get('email_search_query')
 
     if not query:
@@ -63,15 +63,13 @@ def results():
 
     try:
         gmail = GmailHandler(current_user)
-        page_token = request.args.get('page_token')
 
-        # Search emails
-        search_results = gmail.search_emails(query, max_results=25, page_token=page_token)
-        messages = search_results['messages']
+        # Fetch all matching messages at once (up to 500)
+        all_messages = gmail.search_all_emails(query, max_total=500)
 
         # Get full details for each message
         messages_with_details = []
-        for msg in messages:
+        for msg in all_messages:
             try:
                 details = gmail.get_message_with_attachments(msg['id'])
                 # Only include messages with attachments
@@ -90,8 +88,7 @@ def results():
             query=session.get('email_search_original_query', query),
             date_from=session.get('email_search_date_from', ''),
             date_to=session.get('email_search_date_to', ''),
-            next_page_token=search_results['next_page_token'],
-            result_size_estimate=search_results['result_size_estimate'],
+            total_emails_scanned=len(all_messages),
             format_size=GmailHandler.format_size
         )
 

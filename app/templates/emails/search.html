@@ -13,7 +13,7 @@
                     </h4>
                 </div>
                 <div class="card-body p-4">
-                    <form method="POST" action="{{ url_for('emails.search') }}">
+                    <form method="POST" action="{{ url_for('emails.search') }}" id="searchForm">
                         <div class="mb-4">
                             <label for="query" class="form-label fw-bold">Search Query</label>
                             <input type="text" class="form-control form-control-lg" id="query" name="query"
@@ -38,11 +38,29 @@
                         </div>
 
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-danger btn-lg">
+                            <button type="submit" class="btn btn-danger btn-lg" id="searchBtn">
                                 <i class="bi bi-search"></i> Search Gmail
                             </button>
                         </div>
                     </form>
+
+                    <!-- Searching indicator (hidden by default) -->
+                    <div id="searchingIndicator" class="text-center py-4" style="display: none;">
+                        <div class="spinner-border text-danger mb-3" role="status">
+                            <span class="visually-hidden">Searching...</span>
+                        </div>
+                        <h5>Searching Gmail...</h5>
+                        <p class="text-muted mb-0">Scanning all matching emails and their attachments. This may take a moment.</p>
+                    </div>
+
+                    <script>
+                    document.getElementById('searchForm').addEventListener('submit', function() {
+                        var btn = document.getElementById('searchBtn');
+                        btn.disabled = true;
+                        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Searching...';
+                        document.getElementById('searchingIndicator').style.display = 'block';
+                    });
+                    </script>
 
                     <hr class="my-4">
 

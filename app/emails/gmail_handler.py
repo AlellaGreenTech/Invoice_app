@@ -65,6 +65,31 @@ class GmailHandler:
             else:
                 raise ValueError(f'Failed to search Gmail: {error}')
 
+    def search_all_emails(self, query, max_total=500):
+        """
+        Search emails and auto-paginate to collect all results.
+
+        Args:
+            query: Gmail search query
+            max_total: Maximum total messages to fetch (safety cap)
+
+        Returns:
+            list: All message summaries (id/threadId dicts)
+        """
+        all_messages = []
+        page_token = None
+
+        while len(all_messages) < max_total:
+            batch_size = min(100, max_total - len(all_messages))
+            results = self.search_emails(query, max_results=batch_size, page_token=page_token)
+            all_messages.extend(results['messages'])
+            page_token = results['next_page_token']
+            if not page_token:
+                break
+
+        current_app.logger.info(f'Gmail search collected {len(all_messages)} total messages for query: {query}')
+        return all_messages
+
     def get_message_with_attachments(self, message_id):
         """
         Get email details including attachment metadata.

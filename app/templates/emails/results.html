@@ -14,6 +14,7 @@
                 {% if date_from or date_to %}
                     | Date: {{ date_from or 'any' }} to {{ date_to or 'now' }}
                 {% endif %}
+                | {{ total_emails_scanned }} emails scanned
             </p>
         </div>
         <div class="col-auto">
@@ -139,14 +140,8 @@
         </div>
     </div>
 
-    <div class="text-center mt-4" id="loadMoreContainer">
-        {% if next_page_token and next_page_token != '' %}
-        <button type="button" class="btn btn-outline-primary" id="loadMoreBtn" onclick="loadMore()">
-            <i class="bi bi-arrow-down"></i> Load More Results
-        </button>
-        {% else %}
-        <p class="text-muted"><i class="bi bi-check-circle"></i> All results loaded</p>
-        {% endif %}
+    <div class="text-center mt-4">
+        <p class="text-muted"><i class="bi bi-check-circle"></i> All results loaded ({{ total_emails_scanned }} emails scanned)</p>
     </div>
 
     {% else %}
@@ -179,9 +174,6 @@
 </div>
 
 <script>
-let nextPageToken = '{{ next_page_token or "" }}';
-let totalPdfCount = {{ summary.pdf_count }};
-
 function toggleSelectAll() {
     const selectAll = document.getElementById('selectAll');
     const checkboxes = document.querySelectorAll('.pdf-checkbox');
@@ -202,100 +194,6 @@ function getSelectedAttachments() {
         attachments.push(JSON.parse(cb.dataset.attachment));
     });
     return attachments;
-}
-
-function truncateText(text, maxLength) {
-    if (!text) return '';
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-}
-
-function getAttachmentIcon(mimeType) {
-    if (mimeType === 'application/pdf') return '<i class="bi bi-file-pdf"></i>';
-    if (mimeType && mimeType.startsWith('image/')) return '<i class="bi bi-image"></i>';
-    return '<i class="bi bi-file-earmark"></i>';
-}
-
-function getAttachmentClass(mimeType) {
-    if (mimeType === 'application/pdf') return 'bg-danger';
-    if (mimeType && mimeType.startsWith('image/')) return 'bg-success';
-    return 'bg-secondary';
-}
-
-function loadMore() {
-    if (!nextPageToken) return;
-
-    const btn = document.getElementById('loadMoreBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Loading...';
-
-    fetch(`/emails/load-more?page_token=${encodeURIComponent(nextPageToken)}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            const tbody = document.getElementById('resultsBody');
-
-            // Append new rows
-            data.messages.forEach(msg => {
-                const row = document.createElement('tr');
-
-                // Checkbox cell
-                let checkboxHtml = '<td>';
-                msg.attachments.forEach(att => {
-                    if (att.mime_type === 'application/pdf') {
-                        const attData = JSON.stringify({id: att.id, message_id: att.message_id, filename: att.filename, size: att.size});
-                        checkboxHtml += `<input type="checkbox" class="form-check-input pdf-checkbox" data-attachment='${attData}' onchange="updateSelectedCount()">`;
-                        totalPdfCount++;
-                    }
-                });
-                checkboxHtml += '</td>';
-
-                // Subject cell
-                const subjectHtml = `<td><strong>${truncateText(msg.subject, 60)}</strong><br><small class="text-muted">${truncateText(msg.snippet, 80)}</small></td>`;
-
-                // From cell
-                const fromHtml = `<td><small>${truncateText(msg.from, 30)}</small></td>`;
-
-                // Date cell
-                const dateHtml = `<td><small>${msg.date || ''}</small></td>`;
-
-                // Attachments cell
-                let attachmentsHtml = '<td>';
-                msg.attachments.forEach(att => {
-                    const badgeClass = getAttachmentClass(att.mime_type);
-                    const icon = getAttachmentIcon(att.mime_type);
-                    attachmentsHtml += `<a href="${att.view_url}" target="_blank" class="badge text-decoration-none ${badgeClass} me-1" title="Click to view ${att.filename}">${icon} ${truncateText(att.filename, 20)} <small>(${att.size_formatted})</small></a>`;
-                });
-                attachmentsHtml += '</td>';
-
-                row.innerHTML = checkboxHtml + subjectHtml + fromHtml + dateHtml + attachmentsHtml;
-                tbody.appendChild(row);
-            });
-
-            // Update next page token
-            nextPageToken = data.next_page_token || '';
-
-            // Update PDF count
-            document.getElementById('downloadAllCount').textContent = totalPdfCount;
-            document.getElementById('downloadAllBtn').disabled = totalPdfCount === 0;
-
-            // Update load more button
-            const container = document.getElementById('loadMoreContainer');
-            if (nextPageToken) {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-arrow-down"></i> Load More Results';
-            } else {
-                container.innerHTML = '<p class="text-muted"><i class="bi bi-check-circle"></i> All results loaded</p>';
-            }
-        })
-        .catch(error => {
-            console.error('Load more error:', error);
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-arrow-down"></i> Load More Results';
-            alert('Failed to load more results: ' + error.message);
-        });
 }
 
 function downloadSelected() {
