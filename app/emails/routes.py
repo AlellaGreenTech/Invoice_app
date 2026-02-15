@@ -8,13 +8,9 @@ from app.emails import emails_bp
 from app.emails.gmail_handler import GmailHandler
 
 
-def _check_gmail_access():
-    """Check if user has Gmail access. Returns redirect response if not, None if OK."""
-    # If we already know gmail is authorized this session, skip check
-    if session.get('gmail_authorized'):
-        return None
-    # Otherwise, we'll find out when the API call fails
-    return None
+def _has_gmail_tokens():
+    """Check if the current user has Gmail tokens stored in the database."""
+    return bool(current_user.refresh_token)
 
 
 @emails_bp.route('/search', methods=['GET', 'POST'])
@@ -22,7 +18,7 @@ def _check_gmail_access():
 def search():
     """Display search form and handle search submission."""
     # Show connect prompt if Gmail not yet authorized
-    if not session.get('gmail_authorized'):
+    if not _has_gmail_tokens():
         return render_template('emails/connect_gmail.html')
 
     if request.method == 'POST':
