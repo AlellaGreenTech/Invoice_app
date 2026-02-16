@@ -96,7 +96,11 @@ def results():
         flash('Failed to search Gmail. Please try again.', 'error')
         return redirect(url_for('emails.search'))
     except ValueError as e:
-        flash(str(e), 'error')
+        error_str = str(e)
+        if 'access denied' in error_str.lower() or 'permission' in error_str.lower():
+            flash('Gmail access required. Please authorize Gmail to use this feature.', 'warning')
+            return redirect(url_for('auth.authorize_gmail'))
+        flash(error_str, 'error')
         return redirect(url_for('emails.search'))
     except Exception as e:
         error_str = str(e)
