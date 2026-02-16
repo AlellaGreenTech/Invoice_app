@@ -1,6 +1,9 @@
 """Google OAuth authentication helper."""
 import os
 import json
+
+# Allow Google to return different scopes than requested (needed for incremental auth)
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
